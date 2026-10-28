@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     postgres_url: str = "postgresql://desk:desk@localhost:5432/desk"
     redis_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
+    # false: embedded Qdrant on disk under data/qdrant (no Docker needed)
+    use_qdrant_server: bool = False
     neo4j_url: str = "bolt://localhost:7687"
     kafka_bootstrap: str = "localhost:19092"
 

@@ -1,30 +1,110 @@
 import argparse
 import json
+import time
 from datetime import date
+from pathlib import Path
 
+import httpx
+
+from .config import settings
 from .edgar.chunker import chunk_filing
 from .edgar.client import EdgarClient
 from .edgar.parser import parse_sections
+
+DATA = Path("data")
+CHUNKS = DATA / "chunks"
+
+
+def _tickers(arg: str) -> list[str]:
+    from .ingest.universe import SP100
+
+    return SP100 if arg == "sp100" else [t.strip().upper() for t in arg.split(",")]
+
+
+def _index(fake: bool = False, rerank: bool = True):
+    from qdrant_client import QdrantClient
+
+    from .retrieval.index import HybridIndex
+    from .retrieval.models import CrossEncoderReranker, FastEmbedder, HashEmbedder
+
+    if fake:
+        return HybridIndex(HashEmbedder())
+    q = (QdrantClient(url=settings.qdrant_url) if settings.qdrant_url.startswith("http")
+         and settings.use_qdrant_server else QdrantClient(path=str(DATA / "qdrant")))
+    return HybridIndex(FastEmbedder(), CrossEncoderReranker() if rerank else None, q)
+
+
+def _load_index(**kw):
+    from .ingest.pipeline import load_corpus
+
+    idx = _index(**kw)
+    corpus = load_corpus(CHUNKS)
+    t = time.time()
+    for i in range(0, len(corpus), 512):
+        idx.add(corpus[i:i + 512])
+    print(f"index ready: {len(corpus):,} chunks ({time.time() - t:.0f}s)")
+    return idx
 
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="desk")
     sub = p.add_subparsers(dest="cmd", required=True)
+
     f = sub.add_parser("filings", help="list SEC filings for a ticker")
     f.add_argument("ticker")
     f.add_argument("--forms", default="10-K,10-Q,8-K")
     f.add_argument("--as-of", type=date.fromisoformat)
     f.add_argument("-n", type=int, default=10)
+
     s = sub.add_parser("sections", help="parse the latest 10-K/10-Q into sections and chunks")
     s.add_argument("ticker")
     s.add_argument("--form", default="10-K")
     s.add_argument("--as-of", type=date.fromisoformat)
     s.add_argument("--out", help="write chunks as JSONL to this path")
+
+    for name, hlp in (("ingest", "backfill filings and parse them into the corpus"),
+                      ("backfill", "queue historical filings onto raw-docs (kafka bus)"),
+                      ("parse", "consume raw-docs, parse and chunk into the corpus")):
+        c = sub.add_parser(name, help=hlp)
+        c.add_argument("--tickers", default="sp100", help="comma list or 'sp100'")
+        c.add_argument("--forms", default="10-K,10-Q")
+        c.add_argument("--since", type=date.fromisoformat, default=date(2021, 1, 1))
+        c.add_argument("--bus", choices=["memory", "kafka"],
+                       default="memory" if name == "ingest" else "kafka")
+        c.add_argument("--limit", type=int, help="stop after this many filings")
+
+    w = sub.add_parser("watch", help="poll EDGAR for new covered filings and ingest them")
+    w.add_argument("--tickers", default="sp100")
+    w.add_argument("--forms", default="10-K,10-Q,8-K")
+    w.add_argument("--bus", choices=["memory", "kafka"], default="memory")
+    w.add_argument("--every", type=int, default=300, help="seconds between polls")
+    w.add_argument("--once", action="store_true")
+
+    fx = sub.add_parser("facts", help="load XBRL company facts into the fact store")
+    fx.add_argument("--tickers", default="sp100")
+
+    sub.add_parser("stats", help="corpus document and chunk counts")
+
+    q = sub.add_parser("search", help="hybrid search over the corpus")
+    q.add_argument("query")
+    q.add_argument("--ticker", action="append", default=[])
+    q.add_argument("--section", action="append", default=[])
+    q.add_argument("--as-of", type=date.fromisoformat)
+    q.add_argument("--method", default="hybrid_rerank",
+                   choices=["bm25", "dense", "hybrid", "hybrid_rerank"])
+    q.add_argument("-k", type=int, default=5)
+
+    e = sub.add_parser("eval-retrieval", help="compare retrieval methods on the golden set")
+    e.add_argument("--golden", default="evals/retrieval_golden.jsonl")
+    e.add_argument("-k", type=int, default=10)
+    e.add_argument("--out", default="evals/results/retrieval.md")
+
     a = p.parse_args()
 
     if a.cmd == "filings":
         for fl in EdgarClient().filings(a.ticker, set(a.forms.split(",")), a.as_of)[: a.n]:
             print(f"{fl.filing_date}  {fl.form:6} {fl.accession}  {fl.url}")
+
     elif a.cmd == "sections":
         ec = EdgarClient()
         fl = ec.filings(a.ticker, {a.form}, a.as_of)[0]
@@ -39,6 +119,78 @@ def main() -> None:
         if a.out:
             with open(a.out, "w", encoding="utf-8") as fh:
                 fh.writelines(json.dumps(c.to_dict()) + "\n" for c in chunks)
+
+    elif a.cmd in ("ingest", "backfill", "parse"):
+        from .ingest.bus import make_bus
+        from .ingest.pipeline import backfill, parse_stage
+
+        ec, bus = EdgarClient(), make_bus(a.bus, settings.kafka_bootstrap)
+        if a.cmd in ("ingest", "backfill"):
+            n = backfill(ec, bus, _tickers(a.tickers), set(a.forms.split(",")), a.since)
+            print(f"queued {n} filings")
+        if a.cmd in ("ingest", "parse"):
+            print(f"parsed {parse_stage(ec, bus, CHUNKS, limit=a.limit)} filings")
+
+    elif a.cmd == "watch":
+        from .ingest.bus import make_bus
+        from .ingest.pipeline import parse_stage
+        from .ingest.watcher import Watcher
+
+        ec, bus = EdgarClient(), make_bus(a.bus, settings.kafka_bootstrap)
+        wt = Watcher(ec, bus, _tickers(a.tickers), set(a.forms.split(",")),
+                     DATA / "watcher_seen.json")
+        while True:
+            new = wt.poll_once()
+            print(f"{time.strftime('%H:%M:%S')} {len(new)} new filings")
+            if new and a.bus == "memory":
+                parse_stage(ec, bus, CHUNKS)
+            if a.once:
+                break
+            time.sleep(a.every)
+
+    elif a.cmd == "facts":
+        from .ingest.facts import FactStore, flatten
+
+        ec, store = EdgarClient(), FactStore(DATA / "facts.db")
+        for t in _tickers(a.tickers):
+            try:
+                n = store.upsert(flatten(t, ec.company_facts(t)))
+                print(f"{t:6} {n:>7,} facts")
+            except httpx.HTTPError as ex:
+                print(f"{t:6} failed: {ex}")
+            time.sleep(0.12)
+
+    elif a.cmd == "stats":
+        from collections import Counter
+
+        from .ingest.pipeline import load_corpus
+
+        corpus = load_corpus(CHUNKS)
+        docs = {c["accession"]: c for c in corpus}
+        print(f"documents: {len(docs):,}  chunks: {len(corpus):,}  "
+              f"tickers: {len({c['ticker'] for c in corpus})}")
+        for form, n in sorted(Counter(c["form"] for c in docs.values()).items()):
+            print(f"  {form:6} {n:>6,} documents")
+
+    elif a.cmd == "search":
+        from .retrieval.index import Filters
+
+        idx = _load_index(rerank=a.method == "hybrid_rerank")
+        f = Filters(a.as_of, tuple(t.upper() for t in a.ticker), tuple(a.section))
+        for h in idx.search(a.query, f, k=a.k, method=a.method):
+            c = h.chunk
+            print(f"\n[{h.score:.3f}] {c['ticker']} {c['form']} {c['filing_date']} "
+                  f"Item {c['section']} {h.ranks}\n  {c['text'][:300]}...\n  {c['source_url']}")
+
+    elif a.cmd == "eval-retrieval":
+        from .retrieval.evaluate import evaluate, load_golden, to_markdown
+
+        golden = load_golden(Path(a.golden))
+        res = evaluate(_load_index(), golden, k=a.k)
+        md = to_markdown(res, a.k, len(golden))
+        print(md)
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out).write_text(md + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

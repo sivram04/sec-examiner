@@ -81,6 +81,13 @@ def _blocks(html: str) -> list[tuple[str, str]]:
     return out
 
 
+def whole_document(html: str, form: str) -> Section:
+    """One pseudo-section holding the full body, for unsectioned forms such as 8-K."""
+    blocks = _blocks(html)
+    return Section("body", form, "\n\n".join(t for k, t in blocks if k == "text"),
+                   [t for k, t in blocks if k == "table"])
+
+
 def _is_heading(txt: str) -> bool:
     return len(txt) < 200
 
