@@ -25,14 +25,13 @@ def backfill(edgar: EdgarClient, bus: Bus, tickers: list[str], forms: set[str],
     n = 0
     for t in tickers:
         try:
-            filings = edgar.filings(t, forms, as_of)
+            filings = edgar.filings(t, forms, as_of, since=since)
         except KeyError:
             print(f"skip {t}: not in SEC ticker map")
             continue
         for f in filings:
-            if f.filing_date >= since:
-                bus.publish(RAW_DOCS, f.accession, filing_message(f, t))
-                n += 1
+            bus.publish(RAW_DOCS, f.accession, filing_message(f, t))
+            n += 1
     bus.flush()
     return n
 

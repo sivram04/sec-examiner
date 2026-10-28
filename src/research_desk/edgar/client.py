@@ -8,6 +8,7 @@ from ..config import settings
 
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
+PAGE_URL = "https://data.sec.gov/submissions/{name}"
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/{doc}"
 
@@ -33,7 +34,11 @@ def parse_filings(cik: int, submissions: dict, forms: set[str] | None = None,
 
     as_of enforces point-in-time correctness: nothing filed after it is returned.
     """
-    r = submissions["filings"]["recent"]
+    return _parse_block(cik, submissions["filings"]["recent"], forms, as_of)
+
+
+def _parse_block(cik: int, r: dict, forms: set[str] | None, as_of: date | None) -> list[Filing]:
+    """Parse one columnar block (the 'recent' block or an older submissions page)."""
     out = []
     for i, form in enumerate(r["form"]):
         if forms and form not in forms:
@@ -61,13 +66,35 @@ class EdgarClient:
         return self._tickers[ticker.upper()]
 
     def filings(self, ticker: str, forms: set[str] | None = None,
-                as_of: date | None = None) -> list[Filing]:
+                as_of: date | None = None, since: date | None = None) -> list[Filing]:
+        """Filings newest first. With since, older submission pages are fetched as needed:
+        'recent' holds only the last ~1000 filings, which busy filers exhaust within months.
+        """
         cik = self.cik(ticker)
         subs = self.http.get(SUBMISSIONS_URL.format(cik=cik)).raise_for_status().json()
-        return parse_filings(cik, subs, forms, as_of)
+        out = parse_filings(cik, subs, forms, as_of)
+        if since:
+            for page in subs["filings"].get("files", []):
+                if date.fromisoformat(page["filingTo"]) < since:
+                    continue
+                block = self.http.get(PAGE_URL.format(name=page["name"])).raise_for_status().json()
+                out += _parse_block(cik, block, forms, as_of)
+            out = [f for f in out if f.filing_date >= since]
+        return sorted(out, key=lambda f: f.filing_date, reverse=True)
 
     def company_facts(self, ticker: str) -> dict:
         return self.http.get(FACTS_URL.format(cik=self.cik(ticker))).raise_for_status().json()
 
     def document(self, filing: Filing) -> str:
-        return self.http.get(filing.url).raise_for_status().text
+        return decode(self.http.get(filing.url).raise_for_status().content)
+
+
+def decode(raw: bytes) -> str:
+    """SEC serves filings without a charset; most are UTF-8, older ones Windows-1252.
+
+    Guessing wrong turns curly quotes into U+FFFD, which then breaks phrase matching.
+    """
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")

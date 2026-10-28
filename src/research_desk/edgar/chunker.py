@@ -68,7 +68,9 @@ def chunk_filing(filing: Filing, ticker: str, sections: list[Section],
         pieces = [("text", t) for t in split_text(sec.text, max_chars, overlap)]
         pieces += [("table", t) for t in sec.tables]
         for n, (kind, txt) in enumerate(pieces):
-            cid = hashlib.sha1(f"{filing.accession}|{sec.item}|{kind}|{n}".encode()).hexdigest()
+            # text is part of the id, so a parser change re-embeds instead of reusing stale vectors
+            cid = hashlib.sha1(
+                f"{filing.accession}|{sec.item}|{kind}|{n}|{txt}".encode()).hexdigest()
             out.append(Chunk(cid, ticker.upper(), filing.cik, filing.form, filing.accession,
                              filing.filing_date, filing.report_date, sec.item, sec.title,
                              kind, n, txt, filing.url))

@@ -62,6 +62,14 @@ def test_running_page_headers_dont_split_sections():
     assert secs["I-2"].text == "ITEM 2. MD&A\n\nGrowth."
 
 
+def test_text_before_first_item_kept_as_other():
+    html = ("<html><body>" + "<p>Consolidated balance sheet discussion. </p>" * 200
+            + "<p>PART II</p><p>Item 1A. Risk Factors</p><p>None.</p></body></html>")
+    secs = {s.item: s for s in parse_sections(html, form="10-Q")}
+    assert set(secs) == {"II-1A", "other"}
+    assert "balance sheet" in secs["other"].text
+
+
 def test_split_text_respects_max_and_overlaps():
     text = "\n\n".join(f"Paragraph {i} " + "word " * 80 for i in range(10))
     chunks = split_text(text, max_chars=1000, overlap=100)

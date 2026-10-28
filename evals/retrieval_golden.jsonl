@@ -1,0 +1,26 @@
+{"id": "r002", "question": "How much did NVIDIA write down for H20 excess inventory and purchase obligations?", "ticker": "NVDA", "as_of": "2025-12-31", "relevant": ["H20 excess inventory"]}
+{"id": "r003", "question": "Which foundry manufactures NVIDIA's GPUs?", "ticker": "NVDA", "as_of": "2026-12-31", "relevant": ["Taiwan Semiconductor Manufacturing"]}
+{"id": "r004", "question": "What is the Blackwell architecture?", "ticker": "NVDA", "as_of": "2026-12-31", "relevant": ["Blackwell architecture"]}
+{"id": "r007", "question": "What risks come from the AI diffusion export rule?", "ticker": "NVDA", "as_of": "2025-06-30", "relevant": ["AI Diffusion"]}
+{"id": "r009", "question": "How did Azure and other cloud services revenue grow?", "ticker": "MSFT", "as_of": "2026-12-31", "relevant": ["Azure and other cloud services revenue"]}
+{"id": "r015", "question": "How much were Apple's Services net sales?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["Services net sales"]}
+{"id": "r017", "question": "What are Apple's risks under the EU Digital Markets Act?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["Digital Markets Act"]}
+{"id": "r018", "question": "What is the status of the Epic Games litigation?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["Epic"]}
+{"id": "r019", "question": "How do tariffs affect Apple's gross margin?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["tariff"]}
+{"id": "r021", "question": "What was the European Commission State Aid decision about?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["State Aid"]}
+{"id": "r022", "question": "What is Apple's iPhone net sales trend?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["iPhone net sales"]}
+{"id": "r023", "question": "Where does Apple's manufacturing take place?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["outsourcing partners"]}
+{"id": "r032", "question": "What does ExxonMobil report about Guyana production?", "ticker": "XOM", "as_of": "2026-12-31", "relevant": ["Guyana"]}
+{"id": "r033", "question": "What is ExxonMobil's Permian Basin activity?", "ticker": "XOM", "as_of": "2026-12-31", "relevant": ["Permian"]}
+{"id": "r034", "question": "How much H20 revenue did NVIDIA record before the new export licensing requirement?", "ticker": "NVDA", "as_of": "2025-12-31", "relevant": ["Sales of our H20 products were"]}
+{"id": "r035", "question": "How much H20 revenue came from the licenses granted in August 2025?", "ticker": "NVDA", "as_of": "2026-12-31", "relevant": ["in H20 revenue under those licenses"]}
+{"id": "r036", "question": "What are Microsoft's total funding commitments to OpenAI?", "ticker": "MSFT", "as_of": "2026-12-31", "relevant": ["total funding commitments"]}
+{"id": "r037", "question": "How did OpenAI investment gains or losses affect other income?", "ticker": "MSFT", "as_of": "2026-12-31", "relevant": ["from investments in OpenAI"]}
+{"id": "r038", "question": "How much intangible assets relate to Activision Blizzard?", "ticker": "MSFT", "as_of": "2026-12-31", "relevant": ["intangible assets of $ 22.0 billion related to Activision"]}
+{"id": "r039", "question": "How much of operating expense growth came from the Activision Blizzard acquisition?", "ticker": "MSFT", "as_of": "2026-12-31", "relevant": ["points of growth from the Activision Blizzard acquisition"]}
+{"id": "r040", "question": "How much unearned revenue was recognized and deferred during the period?", "ticker": "MSFT", "as_of": "2026-12-31", "relevant": ["Recognition of unearned revenue"]}
+{"id": "r041", "question": "What is JPMorgan's Standardized CET1 requirement including regulatory buffers?", "ticker": "JPM", "as_of": "2026-12-31", "relevant": ["CET1 capital ratio requirement, including regulatory buffers"]}
+{"id": "r042", "question": "When and from whom did JPMorgan acquire First Republic Bank?", "ticker": "JPM", "as_of": "2025-12-31", "relevant": ["assumed certain liabilities of First Republic Bank"]}
+{"id": "r043", "question": "Which Basel III approach is more binding for JPMorgan's risk-based ratios?", "ticker": "JPM", "as_of": "2026-12-31", "relevant": ["were more binding than the Basel III Advanced"]}
+{"id": "r044", "question": "Why did Greater China net sales decrease in fiscal 2025?", "ticker": "AAPL", "as_of": "2025-12-31", "relevant": ["Greater China net sales decreased during 2025"]}
+{"id": "r045", "question": "Why did Greater China net sales increase in the first quarter of 2026?", "ticker": "AAPL", "as_of": "2026-12-31", "relevant": ["Greater China net sales increased during the first quarter of 2026"]}

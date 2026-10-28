@@ -30,6 +30,8 @@ PART_RE = re.compile(r"^\s*part\s+(i{1,2})\b", re.IGNORECASE)
 # bare "PART I" / "Item 1" / "Item 3, 4" lines: page headers, not prose
 RUNNING_RE = re.compile(r"^\s*(part\s+i{1,2}|items?\s+\d{1,2}[a-c]?(\s*,\s*\d{1,2}[a-c]?)*)\.?\s*$",
                         re.IGNORECASE)
+# below this, leftover text is cover page and table of contents
+MIN_OTHER_CHARS = 5000
 BLOCK_TAGS = ["p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr"]
 
 
@@ -122,14 +124,24 @@ def parse_sections(html: str, form: str = "10-K") -> list[Section]:
         if key in names and (not starts or starts[-1][1] != key):
             starts.append((i, key))
 
-    best: dict[str, Section] = {}
+    best: dict[str, tuple[Section, range]] = {}
     for n, (i, key) in enumerate(starts):
         end = starts[n + 1][0] if n + 1 < len(starts) else len(blocks)
         body = [b for j, b in enumerate(blocks[i + 1:end], i + 1) if j not in running]
         text = "\n\n".join(t for k, t in body if k == "text")
         sec = Section(key, names[key], text, [t for k, t in body if k == "table"])
-        if key not in best or len(sec.text) > len(best[key].text):
-            best[key] = sec
+        if key not in best or len(sec.text) > len(best[key][0].text):
+            best[key] = (sec, range(i, end))
 
     order = list(names)
-    return sorted(best.values(), key=lambda s: order.index(s.item))
+    out = sorted((s for s, _ in best.values()), key=lambda s: order.index(s.item))
+
+    # Text outside every chosen section (e.g. a bank 10-Q whose financial pages precede its
+    # first Item heading) is kept as "other" rather than silently dropped.
+    covered = {j for _, span in best.values() for j in span}
+    rest = [b for j, b in enumerate(blocks) if j not in covered and j not in running]
+    rest_text = "\n\n".join(t for k, t in rest if k == "text")
+    if len(rest_text) >= MIN_OTHER_CHARS:
+        out.append(Section("other", "Other / unsectioned", rest_text,
+                           [t for k, t in rest if k == "table"]))
+    return out

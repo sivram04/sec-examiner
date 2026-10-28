@@ -23,6 +23,13 @@ def test_as_of_excludes_future_filings():
     assert len(out) == 2
 
 
+def test_decode_handles_cp1252_and_utf8():
+    from research_desk.edgar.client import decode
+
+    assert decode("Apple’s".encode()) == "Apple’s"
+    assert decode("Apple’s".encode("cp1252")) == "Apple’s"
+
+
 def test_empty_report_date():
     out = parse_filings(320193, SUBS, forms={"8-K"})
     assert out[0].report_date is None
