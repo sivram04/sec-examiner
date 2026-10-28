@@ -54,7 +54,7 @@ def main() -> None:
         ev = {"e1": c["text"]}
         cases.append({"claim": s, "citations": ["e1"], "evidence": ev, "expect": True,
                       "kind": "true_sentence"})
-        n = sorted(numbers(s))[0]
+        n = min(numbers(s))
         m = re.search(rf"(?<![\d.,]){re.escape(n)}(?![\d])", s.replace(",", ""))
         bad = str(round(float(n) * 1.37 + 3, 1))
         wrong = (s.replace(",", "")[:m.start()] + bad + s.replace(",", "")[m.end():]) if m else None

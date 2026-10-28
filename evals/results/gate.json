@@ -6,5 +6,5 @@
   "retrieval.hybrid.mrr": 0.846,
   "retrieval.hybrid.ndcg": 0.851,
   "critic.true_claims_accepted": 1.0,
-  "critic.false_claims_rejected": 0.061
+  "critic.false_claims_rejected": 1.0
 }
