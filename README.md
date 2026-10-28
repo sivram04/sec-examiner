@@ -104,7 +104,7 @@ The reranker gives the best ordering (MRR +0.12 over BM25), but BM25 finds the m
 
 | Run | Citation precision | Critic rejection rate | Mean time per report | LLM calls / tokens |
 |---|---|---|---|---|
-| v1 | 0.627 (32/51 accepted claims supported) | 5.6% | 102 s | 98 / 139K in, 7K out |
+| v1 | 0.627 (42/67 accepted claims supported) | 5.6% | 102 s | 98 / 139K in, 7K out |
 | v2 | **0.919** (68/74) | 1.3% | 50 s | 104 / 140K in, 6K out |
 
 Three changes between v1 and v2, each found by reading v1's failures:
