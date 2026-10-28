@@ -36,17 +36,17 @@ Design rules that keep reports honest:
 | 0 Setup | Done: Docker stack, config, CI (lint, tests, eval gate) |
 | 1 Ingestion | Done: EDGAR client (with paging for busy filers), section parser, table extraction, chunker, Redpanda pipeline, new-filing watcher, XBRL fact store |
 | 2 Retrieval | Done: BM25 + dense + RRF + cross-encoder rerank with `as_of`/ticker/section filters; golden set and method comparison |
-| 3 Temporal graph | Partial: risk-factor splitting, deterministic diff, validity spans, what-changed queries, Cypher export. LLM entity/relation extraction (executives, segments, suppliers) and GraphRAG not built yet |
+| 3 Temporal graph | Mostly done: risk-factor splitting and diff; grounded LLM extraction of segments, executives, products, suppliers, customers and competitors from 10-K Item 1 (every entity backed by a verbatim quote, checked in code); validity spans; `graph-query` answers "named in 2023 but not 2025"; the desk uses entity changes as evidence. Not done: a 50-question temporal test set |
 | 4 Agent desk | Done: runs end to end on Gemini (AI Studio free tier) and on a scripted LLM in tests |
 | 5 Evaluation | Mostly done: offline CI gate proven to fail on a deliberate regression; LLM eval measured citation precision 1.000 on 10 questions (target 0.95) |
 | 6 Backtest | Code and leakage tests done; see results below |
-| 7 Web app | Partial: FastAPI backend and a single-page UI served by it. The plan's Next.js/Vercel front end and public deploy are not done |
+| 7 Web app | Partial: FastAPI backend plus a Next.js front end (`frontend/`: research with plan approval, search, what changed, company pages, report library). Public deploy (Vercel + Oracle VM) and demo video not done |
 
 ### Known gaps
-- **Cross-reference filers** (JPM and most big banks) don't use Item headings in their 10-K. Their content is kept, but most of it lands under Item 15 or "other" rather than MD&A / Risk Factors.
-- **XOM**: SEC's ticker map now resolves to a new entity (CIK 2115436) whose filings start in July 2026, so older Exxon history needs a CIK override.
+- **Cross-reference filers** (JPM, C, WFC, MS, and also INTC, MCD, GE, DUK) don't use standard Item headings in their 10-K. Their content is kept, but it lands under "other" rather than MD&A or Risk Factors. A generic "RISK FACTORS" heading fallback was tried and rejected: these filers use ALL-CAPS headings for both risk categories and other sections, so no single rule finds where the section ends.
+- **Entity extraction quality**: quotes are always verbatim, but types are sometimes wrong (Arm and SoftBank, a cancelled acquisition, tagged as suppliers; markets tagged as segments). Name variants ("Broadcom" vs "Broadcom, Inc.") also aren't merged yet.
+- **Transcripts**: earnings-call transcripts aren't freely licensed, so the transcript analyst reads the earnings release each company files with the SEC (8-K Item 2.02, Exhibit 99.1). It scores tone with a fixed lexicon in code.
 - **Risk diff is headline-level.** When a filer folds several factors into one umbrella factor (MSFT, FY2025), the old headlines show as removed even though their content moved.
-- **Transcripts** are not ingested yet; the transcript analyst says so in its trace rather than guessing.
 - Facts, graph and memory use SQLite locally; the schemas are Postgres/Neo4j-ready (`to_cypher`), but those loaders aren't written.
 - The golden retrieval set has 26 questions, against a plan target of ~200.
 
