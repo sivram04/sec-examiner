@@ -1,0 +1,26 @@
+[project]
+name = "research-desk"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27",
+  "pydantic-settings>=2.4",
+  "beautifulsoup4>=4.12",
+  "lxml>=5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+desk = "research_desk.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
