@@ -36,7 +36,7 @@ def main() -> int:
     from research_desk.agents.desk import Tools, build_desk
     from research_desk.cli import DATA, _load_index
     from research_desk.ingest.facts import FactStore
-    from research_desk.llm import chat
+    from research_desk.llm import USAGE, chat
     from research_desk.retrieval.evaluate import load_golden
     from research_desk.retrieval.index import Filters
 
@@ -73,6 +73,10 @@ def main() -> int:
         "citation_precision": round(sum(r["supported"] for r in rows) / acc, 3) if acc else None,
         "verifier_rejection_rate": round(1 - acc / max(1, sum(r["claims"] for r in rows)), 3),
         "mean_secs_per_report": round(sum(r["secs"] for r in rows) / max(1, len(rows)), 1),
+        # tokens include the judge's calls; on the free tier the dollar cost is 0
+        "llm_calls": len(USAGE),
+        "prompt_tokens": sum(u["prompt_tokens"] or 0 for u in USAGE),
+        "completion_tokens": sum(u["completion_tokens"] or 0 for u in USAGE),
         "model": settings.llm_model, "rows": rows}
     out_path = ROOT / "evals" / "results" / "llm_evals.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)

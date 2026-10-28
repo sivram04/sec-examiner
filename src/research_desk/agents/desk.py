@@ -115,8 +115,11 @@ def build_desk(llm: LLM, tools: Tools):
             plan = parse_json(reply)
         except ValueError:
             plan = {}
+        # models write "us-gaap:Revenues" or "Revenues"; the fact store keys on the bare
+        # concept. Core metrics are always included so quant has growth/margins to compute.
+        asked = [str(m).split(":")[-1].strip() for m in plan.get("metrics") or []]
         plan = {"queries": plan.get("queries") or [s["question"]],
-                "metrics": plan.get("metrics") or DEFAULT_METRICS,
+                "metrics": list(dict.fromkeys([*DEFAULT_METRICS, *asked])),
                 "focus": plan.get("focus", "")}
         return {"plan": plan, "trace": _trace(s, "planner", t0, queries=len(plan["queries"]))}
 

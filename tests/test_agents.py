@@ -63,7 +63,8 @@ class ScriptedLLM:
         self.calls.append(system[:30])
         if "plan" in system:
             return json.dumps({"queries": ["tariffs gross margin"],
-                               "metrics": ["Revenues", "NetIncomeLoss"], "focus": "margins"})
+                               "metrics": ["us-gaap:Revenues", "NetIncomeLoss"],
+                               "focus": "margins"})
         if "bull" in system:
             return "```json\n" + json.dumps({"claims": [
                 {"text": "Revenue grew 6.4% year over year.", "citations": ["quant:Revenues"]},
