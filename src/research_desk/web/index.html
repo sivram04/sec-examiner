@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Research Desk</title>
+<style>
+  :root {
+    --bg: #f7f6f2; --panel: #ffffff; --ink: #1b1d1f; --muted: #62676d; --line: #e2e0d9;
+    --accent: #1f5f8b; --accent-ink: #ffffff; --good: #2f7d4f; --bad: #b0412e; --chip: #eef1f4;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131517; --panel: #1b1e21; --ink: #e8e6e1; --muted: #9aa0a6; --line: #2c3035;
+            --accent: #6aa9d6; --accent-ink: #0d1116; --good: #6cc391; --bad: #e58b78; --chip: #242a30; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 18px 24px 0; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  nav { display: flex; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px;
+               color: var(--muted); font: inherit; cursor: pointer; }
+  nav button[aria-selected="true"] { color: var(--ink); border-color: var(--accent); }
+  main { max-width: 1080px; margin: 0 auto; padding: 20px 24px 60px; }
+  section[hidden] { display: none; }
+  form { display: grid; grid-template-columns: 110px 1fr 150px auto; gap: 8px; margin-bottom: 16px; }
+  input, select, textarea { font: inherit; color: var(--ink); background: var(--panel);
+                            border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px;
+                   padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .55; cursor: progress; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
+  .meta { color: var(--muted); font-size: 12.5px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .chip { background: var(--chip); border-radius: 4px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; }
+  .hit p { margin: 6px 0 0; white-space: pre-wrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .added { border-left: 3px solid var(--bad); }
+  .removed { border-left: 3px solid var(--good); }
+  .trace { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .trace div { display: flex; gap: 10px; }
+  .report h1 { font-size: 20px; } .report h2 { font-size: 16px; margin-top: 22px; }
+  .report table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  .report td, .report th { border: 1px solid var(--line); padding: 6px 8px; vertical-align: top; text-align: left; }
+  .report sup a { text-decoration: none; }
+  .report .sources { font-size: 13px; color: var(--muted); word-break: break-word; }
+  .status { color: var(--muted); font-size: 13px; margin: 8px 0; min-height: 20px; }
+  .err { color: var(--bad); }
+  pre.plan { background: var(--chip); padding: 10px; border-radius: 6px; overflow: auto; font-size: 12.5px; }
+  a { color: var(--accent); }
+  @media (max-width: 720px) {
+    form { grid-template-columns: 1fr 1fr; }
+    form input[name=q], form input[name=question] { grid-column: 1 / -1; }
+    .grid2 { grid-template-columns: 1fr; }
+    main { padding: 16px; } header, nav { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Research Desk</h1>
+  <p>Cited equity research from SEC filings. Point-in-time. Research only, not investment advice.</p>
+</header>
+<nav role="tablist">
+  <button role="tab" data-tab="research" aria-selected="true">Research</button>
+  <button role="tab" data-tab="search">Search filings</button>
+  <button role="tab" data-tab="changes">What changed</button>
+  <button role="tab" data-tab="reports">Reports</button>
+</nav>
+<main>
+  <section id="research">
+    <form id="f-research">
+      <input name="ticker" placeholder="Ticker" required value="AAPL" list="tickers">
+      <input name="question" placeholder="Question, e.g. Is gross margin at risk from tariffs?" required>
+      <input name="as_of" type="date" title="As of">
+      <button class="primary">Run desk</button>
+    </form>
+    <div class="status" id="s-research"></div>
+    <div id="plan"></div>
+    <div class="trace" id="trace"></div>
+    <article class="report card" id="report" hidden></article>
+  </section>
+
+  <section id="search" hidden>
+    <form id="f-search">
+      <input name="ticker" placeholder="Ticker" list="tickers">
+      <input name="q" placeholder="Search query" required>
+      <input name="as_of" type="date" title="As of">
+      <button class="primary">Search</button>
+    </form>
+    <div class="status" id="s-search"></div>
+    <div id="hits"></div>
+  </section>
+
+  <section id="changes" hidden>
+    <form id="f-changes">
+      <input name="ticker" placeholder="Ticker" required list="tickers">
+      <input name="start" type="date" required title="From">
+      <input name="end" type="date" required title="To">
+      <button class="primary">Compare</button>
+    </form>
+    <div class="status" id="s-changes"></div>
+    <div class="grid2"><div id="added"></div><div id="removed"></div></div>
+  </section>
+
+  <section id="reports" hidden>
+    <div class="status" id="s-reports"></div>
+    <div id="report-list"></div>
+  </section>
+</main>
+<datalist id="tickers"></datalist>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const today = new Date().toISOString().slice(0, 10);
+document.querySelectorAll('input[type=date]').forEach(i => { if (i.name !== "start") i.value = today; });
+$('#f-changes [name=start]').value = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('main section').forEach(s => s.hidden = s.id !== b.dataset.tab);
+  if (b.dataset.tab === 'reports') loadReports();
+});
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || r.statusText);
+  return body;
+}
+const form = f => Object.fromEntries(new FormData(f));
+
+api('/api/companies').then(cs => {
+  $('#tickers').innerHTML = cs.map(c => `<option value="${esc(c.ticker)}">${c.documents} filings, latest ${esc(c.latest_filing)}</option>`).join('');
+}).catch(() => {});
+
+// Markdown subset produced by the writer: headings, bullets, tables, footnotes, emphasis
+function md(src) {
+  const notes = {};
+  src = src.replace(/^\[\^(\d+)\]: (.*)$/gm, (_, n, t) => { notes[n] = t; return ''; });
+  const inline = s => esc(s).replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/\[\^(\d+)\]/g, (_, n) => `<sup><a href="#fn${n}">[${n}]</a></sup>`);
+  const out = []; let list = false, table = [];
+  const flushTable = () => {
+    if (!table.length) return;
+    const rows = table.filter(r => !/^\|[-| ]+\|$/.test(r)).map(r => r.slice(1, -1).split('|'));
+    out.push('<table>' + rows.map((r, i) => '<tr>' + r.map(c => i ? `<td>${inline(c.trim())}</td>` : `<th>${inline(c.trim())}</th>`).join('') + '</tr>').join('') + '</table>');
+    table = [];
+  };
+  for (const line of src.split('\n')) {
+    if (line.startsWith('|')) { table.push(line.trim()); continue; } else flushTable();
+    if (line.startsWith('- ')) { if (!list) { out.push('<ul>'); list = true; } out.push(`<li>${inline(line.slice(2))}</li>`); continue; }
+    if (list) { out.push('</ul>'); list = false; }
+    if (line.startsWith('## ')) out.push(`<h2>${inline(line.slice(3))}</h2>`);
+    else if (line.startsWith('# ')) out.push(`<h1>${inline(line.slice(2))}</h1>`);
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) out.push('</ul>'); flushTable();
+  const link = t => esc(t).replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  const fn = Object.entries(notes).map(([n, t]) => `<div id="fn${n}">[${n}] ${link(t)}</div>`).join('');
+  return out.join('\n') + (fn ? `<div class="sources">${fn}</div>` : '');
+}
+
+function showTrace(trace) {
+  $('#trace').innerHTML = (trace || []).map(t => {
+    const { agent, secs, ...rest } = t;
+    return `<div><span>${esc(agent.padEnd(12))}</span><span>${esc(secs)}s</span><span>${esc(JSON.stringify(rest))}</span></div>`;
+  }).join('');
+}
+
+async function handle(res) {
+  showTrace(res.trace);
+  if (res.status === 'needs_input') {
+    const it = res.interrupt;
+    const what = it.type === 'approve_plan' ? 'Approve or edit the plan before the expensive steps' : 'Review claims the verifier flagged';
+    const payload = it.type === 'approve_plan' ? it.plan : it.flagged;
+    $('#plan').innerHTML = `<div class="card"><strong>${esc(what)}</strong>
+      <textarea id="plan-edit" rows="10" style="width:100%;margin-top:8px;font-family:var(--mono)">${esc(JSON.stringify(payload, null, 2))}</textarea>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="primary" id="go">Continue</button></div></div>`;
+    $('#go').onclick = async () => {
+      $('#go').disabled = true; $('#s-research').textContent = 'Running specialists, quant, debate and verification…';
+      let answer = {};
+      if (it.type === 'approve_plan') {
+        try { answer = { plan: JSON.parse($('#plan-edit').value) }; }
+        catch { $('#s-research').innerHTML = '<span class="err">Plan is not valid JSON.</span>'; $('#go').disabled = false; return; }
+      }
+      try { $('#plan').innerHTML = ''; await handle(await api(`/api/research/${encodeURIComponent(res.thread)}/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(answer) })); }
+      catch (e) { $('#s-research').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    };
+    $('#s-research').textContent = '';
+    return;
+  }
+  const rejected = (res.verdicts || []).filter(v => !v.ok).length;
+  $('#s-research').textContent = `Done. ${(res.verdicts || []).length - rejected} claims verified, ${rejected} rejected.`;
+  $('#report').hidden = false; $('#report').innerHTML = md(res.report);
+}
+
+$('#f-research').onsubmit = async e => {
+  e.preventDefault();
+  const btn = $('button', e.target); btn.disabled = true;
+  $('#report').hidden = true; $('#plan').innerHTML = ''; $('#trace').innerHTML = '';
+  $('#s-research').textContent = 'Planning…';
+  try { await handle(await api('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form(e.target)) })); }
+  catch (err) { $('#s-research').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
+  btn.disabled = false;
+};
+
+$('#f-search').onsubmit = async e => {
+  e.preventDefault();
+  const p = new URLSearchParams(Object.entries(form(e.target)).filter(([, v]) => v));
+  $('#s-search').textContent = 'Searching…'; $('#hits').innerHTML = '';
+  try {
+    const r = await api('/api/search?' + p);
+    $('#s-search').textContent = `${r.hits.length} passages in ${r.ms} ms (hybrid BM25 + dense, reranked, filed on or before the as-of date)`;
+    $('#hits').innerHTML = r.hits.map(h => `<div class="card hit">
+      <div class="meta"><span class="chip">${esc(h.ticker)}</span><span>${esc(h.form)} filed ${esc(h.filed)}</span>
+      <span>Item ${esc(h.section)} · ${esc(h.section_title)}</span><a href="${esc(h.url)}" target="_blank" rel="noopener">filing</a></div>
+      <p>${esc(h.text.slice(0, 900))}${h.text.length > 900 ? '…' : ''}</p></div>`).join('');
+  } catch (err) { $('#s-search').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
+};
+
+$('#f-changes').onsubmit = async e => {
+  e.preventDefault();
+  const v = form(e.target);
+  try {
+    const r = await api(`/api/risks/${encodeURIComponent(v.ticker)}?start=${v.start}&end=${v.end}`);
+    $('#s-changes').textContent = `${r.added.length} risk factors added, ${r.removed.length} removed between ${v.start} and ${v.end} (10-K Item 1A)`;
+    $('#added').innerHTML = '<h3>Added</h3>' + (r.added.map(x => `<div class="card added"><strong>${esc(x.risk)}</strong><div class="meta">first in ${esc(x.filing)} · ${esc(x.since)}</div></div>`).join('') || '<p class="meta">None</p>');
+    $('#removed').innerHTML = '<h3>Removed</h3>' + (r.removed.map(x => `<div class="card removed"><strong>${esc(x.risk)}</strong><div class="meta">absent from ${esc(x.filing)} · ${esc(x.until)}</div></div>`).join('') || '<p class="meta">None</p>');
+  } catch (err) { $('#s-changes').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
+};
+
+async function loadReports() {
+  try {
+    const rs = await api('/api/reports');
+    $('#s-reports').textContent = rs.length ? '' : 'No reports yet. Run the desk from the Research tab.';
+    $('#report-list').innerHTML = rs.map(r => `<div class="card"><a href="#" data-id="${r.id}"><strong>${esc(r.ticker)}</strong>: ${esc(r.question)}</a>
+      <div class="meta">as of ${esc(r.as_of)} · ${new Date(r.created * 1000).toLocaleString()}</div><div class="report" id="rep${r.id}"></div></div>`).join('');
+    document.querySelectorAll('#report-list a[data-id]').forEach(a => a.onclick = async ev => {
+      ev.preventDefault();
+      const r = await api('/api/reports/' + a.dataset.id);
+      $('#rep' + a.dataset.id).innerHTML = md(r.report);
+    });
+  } catch (err) { $('#s-reports').innerHTML = `<span class="err">${esc(err.message)}</span>`; }
+}
+</script>
+</body>
+</html>
