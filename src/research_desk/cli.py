@@ -49,16 +49,24 @@ def _load_index(**kw):
 def _risk_factors(ec: EdgarClient, ticker: str, as_of: date | None, n: int | None,
                   since: date | None = None) -> list[tuple[str, str, list]]:
     """(filing_date, accession, risk factors) for 10-Ks, oldest first."""
-    from .graph.risks import split_risk_factors
+    from .graph.risks import RiskFactor, split_risk_factors
 
     filings = ec.filings(ticker, {"10-K"}, as_of, since=since)[:n]
+    cache = DATA / "risks"
+    cache.mkdir(parents=True, exist_ok=True)
     out = []
     for f in reversed(filings):
-        secs = {s.item: s for s in parse_sections(ec.document(f), f.form)}
-        if "1A" in secs:
-            out.append((f.filing_date.isoformat(), f.accession,
-                        split_risk_factors(secs["1A"].text, secs["1A"].headings)))
-        time.sleep(0.12)
+        path = cache / f"{f.accession}.json"
+        if path.exists():
+            rfs = [RiskFactor(**r) for r in json.loads(path.read_text(encoding="utf-8"))]
+        else:
+            secs = {s.item: s for s in parse_sections(ec.document(f), f.form)}
+            sec = secs.get("1A")
+            rfs = split_risk_factors(sec.text, sec.headings) if sec else []
+            path.write_text(json.dumps([r.__dict__ for r in rfs]), encoding="utf-8")
+            time.sleep(0.12)
+        if rfs:
+            out.append((f.filing_date.isoformat(), f.accession, rfs))
     return out
 
 
@@ -123,6 +131,12 @@ def main() -> None:
     q.add_argument("--method", default="hybrid_rerank",
                    choices=["bm25", "dense", "hybrid", "hybrid_rerank"])
     q.add_argument("-k", type=int, default=5)
+
+    bt = sub.add_parser("backtest", help="risk-deterioration signal vs forward excess returns")
+    bt.add_argument("--tickers", default="sp100")
+    bt.add_argument("--since", type=date.fromisoformat, default=date(2018, 1, 1))
+    bt.add_argument("--days", default="63,252", help="forward windows in trading days")
+    bt.add_argument("--out", default="evals/results/backtest.json")
 
     rs = sub.add_parser("research", help="run the agent desk and write a cited note")
     rs.add_argument("ticker")
@@ -254,6 +268,39 @@ def main() -> None:
             c = h.chunk
             print(f"\n[{h.score:.3f}] {c['ticker']} {c['form']} {c['filing_date']} "
                   f"Item {c['section']} {h.ranks}\n  {c['text'][:300]}...\n  {c['source_url']}")
+
+    elif a.cmd == "backtest":
+        from dataclasses import asdict
+
+        from .backtest.study import (
+            attach_returns,
+            fetch_prices,
+            load_prices,
+            observations,
+            summarize,
+        )
+
+        ec, obs = EdgarClient(), []
+        for t in _tickers(a.tickers):
+            try:
+                obs += observations(t, _risk_factors(ec, t, None, None, a.since))
+            except (KeyError, httpx.HTTPError) as ex:
+                print(f"{t:6} skipped: {ex!r}")
+                continue
+            print(f"{t:6} {sum(o.ticker == t for o in obs)} filing pairs")
+        px_path = DATA / "prices.csv"
+        tickers = sorted({o.ticker for o in obs})
+        prices = (load_prices(px_path) if px_path.exists()
+                  and set(tickers) <= set(load_prices(px_path))
+                  else fetch_prices(tickers, a.since, px_path))
+        result = {"note": "Research only, not investment advice.", "windows": {}}
+        for d in (int(x) for x in a.days.split(",")):
+            rows = attach_returns(obs, prices, d)
+            result["windows"][str(d)] = summarize(rows)
+            print(f"\n{d} trading days: {json.dumps(result['windows'][str(d)], indent=2)}")
+        result["observations"] = [asdict(o) for o in attach_returns(obs, prices, 252)]
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
     elif a.cmd == "research":
         from langgraph.types import Command
