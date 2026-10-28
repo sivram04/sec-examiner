@@ -1,81 +1,83 @@
 {
-  "questions": 9,
-  "citation_precision": 0.627,
-  "verifier_rejection_rate": 0.056,
-  "mean_secs_per_report": 101.6,
-  "llm_calls": 98,
-  "prompt_tokens": 139399,
-  "completion_tokens": 7006,
+  "questions": 10,
+  "citation_precision": 0.919,
+  "verifier_rejection_rate": 0.013,
+  "mean_secs_per_report": 49.6,
+  "llm_calls": 104,
+  "prompt_tokens": 139867,
+  "completion_tokens": 5926,
   "model": "gemini-3.1-flash-lite",
-  "errors": [
-    {
-      "id": "r003",
-      "error": "[WinError 10054] An existing connection was forcibly closed by the remote host"
-    }
-  ],
+  "errors": [],
   "rows": [
     {
       "id": "r002",
-      "secs": 204.6,
+      "secs": 49.2,
       "claims": 7,
       "accepted": 7,
-      "supported": 6
+      "supported": 7
+    },
+    {
+      "id": "r003",
+      "secs": 50.6,
+      "claims": 3,
+      "accepted": 3,
+      "supported": 3
     },
     {
       "id": "r004",
-      "secs": 109.5,
+      "secs": 58.5,
       "claims": 8,
       "accepted": 8,
-      "supported": 5
+      "supported": 8
     },
     {
       "id": "r007",
-      "secs": 124.6,
-      "claims": 9,
-      "accepted": 9,
-      "supported": 6
+      "secs": 46.6,
+      "claims": 10,
+      "accepted": 10,
+      "supported": 9
     },
     {
       "id": "r009",
-      "secs": 54.3,
-      "claims": 9,
-      "accepted": 9,
+      "secs": 46.9,
+      "claims": 8,
+      "accepted": 7,
       "supported": 4
     },
     {
       "id": "r015",
-      "secs": 126.1,
-      "claims": 5,
-      "accepted": 5,
-      "supported": 3
+      "secs": 36.6,
+      "claims": 6,
+      "accepted": 6,
+      "supported": 6
     },
     {
       "id": "r017",
-      "secs": 79.2,
-      "claims": 8,
-      "accepted": 6,
-      "supported": 0
+      "secs": 58.4,
+      "claims": 10,
+      "accepted": 10,
+      "supported": 10
     },
     {
       "id": "r018",
-      "secs": 100.0,
-      "claims": 9,
+      "secs": 46.7,
+      "claims": 8,
       "accepted": 8,
-      "supported": 7
+      "supported": 8
     },
     {
       "id": "r019",
-      "secs": 64.8,
-      "claims": 9,
-      "accepted": 8,
-      "supported": 4
+      "secs": 59.3,
+      "claims": 7,
+      "accepted": 7,
+      "supported": 5
     },
     {
       "id": "r021",
-      "secs": 51.6,
-      "claims": 7,
-      "accepted": 7,
-      "supported": 7
+      "secs": 43.6,
+      "claims": 8,
+      "accepted": 8,
+      "supported": 8
     }
   ]
 }

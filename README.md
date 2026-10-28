@@ -37,8 +37,8 @@ Design rules that keep reports honest:
 | 1 Ingestion | Done: EDGAR client (with paging for busy filers), section parser, table extraction, chunker, Redpanda pipeline, new-filing watcher, XBRL fact store |
 | 2 Retrieval | Done: BM25 + dense + RRF + cross-encoder rerank with `as_of`/ticker/section filters; golden set and method comparison |
 | 3 Temporal graph | Partial: risk-factor splitting, deterministic diff, validity spans, what-changed queries, Cypher export. LLM entity/relation extraction (executives, segments, suppliers) and GraphRAG not built yet |
-| 4 Agent desk | Done in code and tests with a scripted LLM; not yet run against a real model (needs `LLM_API_KEY`) |
-| 5 Evaluation | Partial: offline CI gate (retrieval fixture, critic regression set) proven to fail on a deliberate regression; LLM citation-precision runner written, not yet run |
+| 4 Agent desk | Done: runs end to end on Gemini (AI Studio free tier) and on a scripted LLM in tests |
+| 5 Evaluation | Mostly done: offline CI gate proven to fail on a deliberate regression; LLM eval measured citation precision 0.919 on 10 questions, short of the 0.95 target |
 | 6 Backtest | Code and leakage tests done; see results below |
 | 7 Web app | Partial: FastAPI backend and a single-page UI served by it. The plan's Next.js/Vercel front end and public deploy are not done |
 
@@ -99,6 +99,20 @@ With number-checking disabled, the false-claim rejection rate fell to 0.061 and 
 | Hybrid + rerank | 0.885 | 0.756 | 0.785 |
 
 The reranker gives the best ordering (MRR +0.12 over BM25), but BM25 finds the most answers. Caveat: relevance is judged by exact answer phrases, which favours lexical search, and 26 questions is a small sample. Hybrid fusion also loses recall here, because dense results push lexical hits out of the top 10. Worth trying next: a larger fusion pool, or weighting BM25 more for numeric and entity questions. Building the embedded index took 46 minutes on CPU.
+
+**Agent desk, end to end** (`python evals/llm_evals.py --limit 10`; model `gemini-3.1-flash-lite`, which also acts as the judge; [evals/results/llm_evals.json](evals/results/llm_evals.json)):
+
+| Run | Citation precision | Critic rejection rate | Mean time per report | LLM calls / tokens |
+|---|---|---|---|---|
+| v1 | 0.627 (32/51 accepted claims supported) | 5.6% | 102 s | 98 / 139K in, 7K out |
+| v2 | **0.919** (68/74) | 1.3% | 50 s | 104 / 140K in, 6K out |
+
+Three changes between v1 and v2, each found by reading v1's failures:
+- claims may only state what the cited source says, with no added judgement;
+- off-topic facts are dropped;
+- the critic now treats "€500 million" and "500,000,000" as the same amount.
+
+v2 is still below the plan's 0.95 target. Most of the remaining misses are on two questions (r009, r019). The judge is the same small model, so these scores are indicative, not authoritative. Cost is $0 on the free tier. A sample note is in [evals/results/sample_report_nvda.md](evals/results/sample_report_nvda.md).
 
 **Backtest** (`desk backtest --tickers sp100 --since 2018-01-01`; [evals/results/backtest.json](evals/results/backtest.json)). Signal: risk-factor deterioration between consecutive 10-Ks. Return: excess over SPY from the first close after the filing date.
 
