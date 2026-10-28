@@ -22,6 +22,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+from ..ingest.facts import is_annual
 from . import sandbox
 from .critic import Claim, verify
 
@@ -142,8 +143,7 @@ def build_desk(llm: LLM, tools: Tools):
         if tools.facts:
             for concept in s["plan"]["metrics"]:
                 rows = [r for r in tools.facts.series(s["ticker"], concept, as_of=s["as_of"],
-                                                      form="10-K")
-                        if r["fp"] == "FY" and r["start"]]
+                                                      form="10-K") if is_annual(r)]
                 # one value per fiscal period end, from the latest filing that reported it
                 by_end = {r["end"]: r for r in rows}
                 pts = [{"end": e, "value": r["value"], "accession": r["accession"]}

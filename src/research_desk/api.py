@@ -121,12 +121,15 @@ def create_app(backend: Backend | None = None) -> FastAPI:
     def index():
         return FileResponse(WEB / "index.html")
 
+    @app.get("/api/health")
+    def health():
+        return {"ok": True}
+
     @app.get("/api/companies")
     def companies():
-        from .ingest.pipeline import load_corpus
+        from .ingest.pipeline import corpus_documents
 
-        corpus = load_corpus(be.data / "chunks")
-        docs = {c["accession"]: c for c in corpus}
+        docs = {d["accession"]: d for d in corpus_documents(be.data / "chunks")}
         per = Counter(c["ticker"] for c in docs.values())
         latest = {}
         for c in docs.values():
@@ -158,7 +161,9 @@ def create_app(backend: Backend | None = None) -> FastAPI:
     @app.get("/api/facts/{ticker}/{concept}")
     def facts(ticker: str, concept: str, as_of: str | None = None, form: str = "10-K"):
         rows = be.facts.series(ticker, concept, as_of=as_of, form=form)
-        by_end = {r["end"]: r for r in rows if r["fp"] == "FY"}
+        from .ingest.facts import is_annual
+
+        by_end = {r["end"]: r for r in rows if is_annual(r)}
         return [{"end": e, "value": r["value"], "filed": r["filed"], "accession": r["accession"]}
                 for e, r in sorted(by_end.items())]
 

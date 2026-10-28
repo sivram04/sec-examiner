@@ -4,11 +4,13 @@ import { use, useEffect, useState } from "react";
 import RiskDiff from "@/components/RiskDiff";
 import { api, today, yearAgo, type FactPoint, type RiskChange } from "@/lib/api";
 
-const METRICS: [string, string][] = [
-  ["Revenues", "Revenue"],
-  ["GrossProfit", "Gross profit"],
-  ["OperatingIncomeLoss", "Operating income"],
-  ["NetIncomeLoss", "Net income"],
+// filers switch concepts over time (Apple moved from Revenues to the ASC 606 tag in 2018),
+// so each row lists concepts in preference order and the first value per year wins
+const METRICS: [string, string, string[]][] = [
+  ["Revenues", "Revenue", ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"]],
+  ["GrossProfit", "Gross profit", ["GrossProfit"]],
+  ["OperatingIncomeLoss", "Operating income", ["OperatingIncomeLoss"]],
+  ["NetIncomeLoss", "Net income", ["NetIncomeLoss"]],
 ];
 
 const fmt = (v: number) => `$${(v / 1e9).toLocaleString(undefined, { maximumFractionDigits: 1 })}B`;
@@ -19,10 +21,14 @@ export default function Company({ params }: { params: Promise<{ ticker: string }
   const [risks, setRisks] = useState<RiskChange | null>(null);
 
   useEffect(() => {
-    METRICS.forEach(([concept]) =>
-      api.facts(ticker, concept)
-        .then((pts) => setFacts((f) => ({ ...f, [concept]: pts.slice(-5) })))
-        .catch(() => setFacts((f) => ({ ...f, [concept]: [] }))));
+    METRICS.forEach(([key, , concepts]) =>
+      Promise.all(concepts.map((c) => api.facts(ticker, c).catch(() => [] as FactPoint[])))
+        .then((series) => {
+          const byEnd = new Map<string, FactPoint>();
+          series.forEach((pts) => pts.forEach((p) => { if (!byEnd.has(p.end)) byEnd.set(p.end, p); }));
+          const pts = [...byEnd.values()].sort((a, b) => a.end.localeCompare(b.end)).slice(-5);
+          setFacts((f) => ({ ...f, [key]: pts }));
+        }));
     api.risks(ticker, yearAgo(), today()).then(setRisks).catch(() => setRisks(null));
   }, [ticker]);
 

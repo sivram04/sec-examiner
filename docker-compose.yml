@@ -1,5 +1,17 @@
 # Local dev stack (Phase 0). Langfuse: use the free Langfuse Cloud tier to keep this light.
 services:
+  # the API itself; opt in with `docker compose --profile app up -d api`
+  api:
+    profiles: ["app"]
+    build: .
+    env_file: .env
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3011}
+    ports: ["8011:8000"]
+    volumes:
+      - ./data:/app/data
+      - models:/app/.cache
+    restart: unless-stopped
   redpanda:
     image: redpandadata/redpanda:v24.2.7
     command:
@@ -36,6 +48,7 @@ services:
     image: redis:7
     ports: ["6379:6379"]
 volumes:
+  models:
   qdrant:
   neo4j:
   pg:

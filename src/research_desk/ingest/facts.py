@@ -30,6 +30,17 @@ def flatten(ticker: str, facts: dict) -> list[tuple]:
     return rows
 
 
+def is_annual(row: dict) -> bool:
+    """A full-year duration fact. fp == "FY" only says which filing reported it: 10-Ks also
+    carry quarterly values tagged FY, which must not be mistaken for annual results."""
+    if row.get("fp") != "FY" or not row.get("start"):
+        return False
+    from datetime import date
+
+    days = (date.fromisoformat(row["end"]) - date.fromisoformat(row["start"])).days
+    return 350 <= days <= 380
+
+
 class FactStore:
     def __init__(self, sqlite_path: Path):
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)

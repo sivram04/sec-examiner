@@ -93,6 +93,18 @@ def index_stage(bus: Bus, add: Callable[[list[dict]], None], batch: int = 256,
     return n
 
 
+def corpus_documents(chunk_dir: Path) -> list[dict]:
+    """One metadata row per filing, from each file's first chunk (cheap: no full read)."""
+    out = []
+    for p in sorted(chunk_dir.glob("*.jsonl")):
+        with p.open(encoding="utf-8") as fh:
+            first = fh.readline()
+        if first.strip():
+            c = json.loads(first)
+            out.append({k: c[k] for k in ("ticker", "form", "accession", "filing_date")})
+    return out
+
+
 def load_corpus(chunk_dir: Path) -> list[dict]:
     chunks: list[dict] = []
     for p in sorted(chunk_dir.glob("*.jsonl")):

@@ -21,6 +21,9 @@ FACTS = {"facts": {"us-gaap": {
         {"start": "2023-10-01", "end": "2024-09-28", "val": 391035e6, "fy": 2024, "fp": "FY",
          "form": "10-K", "filed": "2024-11-01", "accn": "a1"},
         {"start": "2024-09-29", "end": "2025-09-27", "val": 416161e6, "fy": 2025, "fp": "FY",
+         "form": "10-K", "filed": "2025-10-31", "accn": "a2"},
+        # a quarterly value carried in the 10-K, also tagged FY: must not be read as annual
+        {"start": "2025-06-29", "end": "2025-09-27", "val": 102466e6, "fy": 2025, "fp": "FY",
          "form": "10-K", "filed": "2025-10-31", "accn": "a2"}]}},
     "NetIncomeLoss": {"units": {"USD": [
         {"start": "2024-09-29", "end": "2025-09-27", "val": 112010e6, "fy": 2025, "fp": "FY",
