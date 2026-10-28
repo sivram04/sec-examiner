@@ -72,7 +72,12 @@ def _blocks(html: str) -> list[tuple[str, str]]:
             continue
         if el.name == "table":
             txt = _table_text(el)
-            if txt:
+            if "\n" not in txt and len(txt) < 150:
+                # a one-row layout table is a heading ("Item 1A. | Risk Factors"), not data
+                txt = txt.replace(" | ", " ")
+                if txt:
+                    out.append(("emph" if _emphasized(el) else "text", txt))
+            elif txt:
                 out.append(("table", txt))
             continue
         # only leaf-ish blocks, so nested divs don't duplicate text
@@ -102,6 +107,12 @@ EMPH_STYLE_RE = re.compile(r"font-weight:\s*(bold|[6-9]00)|font-style:\s*italic"
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
+
+
+def _emphasized(el) -> bool:
+    runs = _runs(el)
+    total = sum(len(s) for s, _ in runs)
+    return total > 0 and sum(len(s) for s, e in runs if e) >= 0.9 * total
 
 
 def _runs(el) -> list[tuple[str, bool]]:

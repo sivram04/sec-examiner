@@ -70,6 +70,21 @@ def test_text_before_first_item_kept_as_other():
     assert "balance sheet" in secs["other"].text
 
 
+def test_item_headings_in_one_row_tables():
+    html = """<html><body>
+    <table><tr><td>Item 1.</td><td>Business</td><td>3</td></tr>
+           <tr><td>Item 1A.</td><td>Risk Factors</td><td>6</td></tr></table>
+    <table><tr><td>Item 1.</td><td>Business</td></tr></table><p>We sell things.</p>
+    <table><tr><td><b>Item 1A.</b></td><td><b>Risk Factors</b></td></tr></table>
+    <p>Demand can fluctuate.</p>
+    <table><tr><td>Net sales</td><td>100</td></tr><tr><td>Cost</td><td>60</td></tr></table>
+    </body></html>"""
+    secs = {s.item: s for s in parse_sections(html)}
+    assert set(secs) == {"1", "1A"}
+    assert secs["1A"].text == "Demand can fluctuate."
+    assert secs["1A"].tables == ["Net sales | 100\nCost | 60"]
+
+
 def test_split_text_respects_max_and_overlaps():
     text = "\n\n".join(f"Paragraph {i} " + "word " * 80 for i in range(10))
     chunks = split_text(text, max_chars=1000, overlap=100)

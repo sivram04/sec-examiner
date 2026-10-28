@@ -37,6 +37,9 @@ def _is_category(p: str) -> bool:
 
 # boilerplate lead-in ("The following risk factors should be considered...")
 INTRO_RE = re.compile(r"^(the following|in addition to the other information)\b.*risk", re.IGNORECASE)
+# category headers: "Business and Industry Risks", "Risks Related to Our Industry", "Workforce risks"
+CATEGORY_RE = re.compile(r"^(?!.*[.?]\s*$)(?=.{0,100}$)(.*\brisks?\b\s*:?\s*$|risks?\s+(related|relating)"
+                         r"\s+to\b.*)", re.IGNORECASE)
 BULLET_RE = re.compile(r"^[•●▪–—\-*·]\s*")
 
 
@@ -54,14 +57,25 @@ def split_risk_factors(text: str, headings: list[str] | None = None) -> list[Ris
     category, head, body = "", None, []
     for i, p in enumerate(paras):
         nxt = paras[i + 1] if i + 1 < len(paras) else None
-        if BULLET_RE.match(p) or not p[:1].isupper() or INTRO_RE.match(p):
+        bold = p in emph
+        if use_emph and bold:
+            p = BULLET_RE.sub("", p)  # some filers (MMM) mark bold headlines with "*"
+        if (BULLET_RE.match(p) and not (use_emph and bold)) or not p[:1].isupper() \
+                or INTRO_RE.match(p):
             is_head = False
         elif use_emph:
-            is_head = p in emph and p.rstrip().endswith((".", "?")) and len(p) >= 40
+            # bold, and either a sentence or a Title Case / ALL CAPS line (AMZN, PFE)
+            # that isn't a category header like "Interest Rate Risks"
+            is_head = bold and len(p) >= 12 and not CATEGORY_RE.search(p) and (
+                p.rstrip().endswith((".", "?"))
+                or (not p.rstrip().endswith(":") and nxt is not None and len(nxt) > len(p)))
         else:
             is_head = _is_headline(p, nxt)
-        if not is_head and _is_category(p) and nxt and not _is_category(nxt) and (
-                not use_emph or p in emph):
+        if use_emph:
+            is_cat = not is_head and bold and bool(CATEGORY_RE.search(p))
+        else:
+            is_cat = not is_head and _is_category(p) and bool(nxt) and not _is_category(nxt)
+        if is_cat:
             if head:
                 out.append(RiskFactor(category, head, "\n\n".join(body)))
                 head, body = None, []

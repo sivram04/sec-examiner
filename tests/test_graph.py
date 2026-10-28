@@ -42,6 +42,23 @@ def test_bold_headlines_win_and_bullets_ignored():
     assert "Bullet summary" in rf[0].body
 
 
+def test_title_case_and_starred_bold_headlines():
+    paras, heads = [], []
+    for cat, hs in (("Business and Industry Risks", ["We Face Intense Competition",
+                                                     "* Foreign currency rates may hurt results"]),
+                    ("Interest Rate Risks", ["MANAGED CARE TRENDS"])):
+        paras.append(cat)
+        heads.append(cat)
+        for h in hs:
+            paras += [h, "Body text explaining the risk." + LONG]
+            heads.append(h)
+    rf = split_risk_factors("\n\n".join(paras), heads + ["x"] * 3)
+    assert [r.headline for r in rf] == ["We Face Intense Competition",
+                                        "Foreign currency rates may hurt results",
+                                        "MANAGED CARE TRENDS"]
+    assert rf[2].category == "Interest Rate Risks"
+
+
 def test_run_in_bold_headlines():
     from research_desk.edgar.parser import parse_sections
 
