@@ -11,3 +11,10 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest -q
+      - name: Eval regression gate
+        run: python evals/gate.py
+      - name: LLM evals (only when a key is configured)
+        if: ${{ env.LLM_API_KEY != '' }}
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: python evals/llm_evals.py --gate

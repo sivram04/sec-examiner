@@ -1,0 +1,9 @@
+{
+  "retrieval.bm25.recall": 0.94,
+  "retrieval.bm25.mrr": 0.79,
+  "retrieval.hybrid.recall": 0.94,
+  "retrieval.hybrid.mrr": 0.82,
+  "retrieval.hybrid.ndcg": 0.83,
+  "critic.true_claims_accepted": 0.95,
+  "critic.false_claims_rejected": 1.0
+}
