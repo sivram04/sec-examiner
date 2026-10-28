@@ -124,6 +124,14 @@ def main() -> None:
                    choices=["bm25", "dense", "hybrid", "hybrid_rerank"])
     q.add_argument("-k", type=int, default=5)
 
+    rs = sub.add_parser("research", help="run the agent desk and write a cited note")
+    rs.add_argument("ticker")
+    rs.add_argument("question")
+    rs.add_argument("--as-of", default=date.today().isoformat())
+    rs.add_argument("--user", default="default")
+    rs.add_argument("--auto", action="store_true", help="skip human-in-the-loop checkpoints")
+    rs.add_argument("--out", help="write the Markdown note here")
+
     e = sub.add_parser("eval-retrieval", help="compare retrieval methods on the golden set")
     e.add_argument("--golden", default="evals/retrieval_golden.jsonl")
     e.add_argument("-k", type=int, default=10)
@@ -246,6 +254,42 @@ def main() -> None:
             c = h.chunk
             print(f"\n[{h.score:.3f}] {c['ticker']} {c['form']} {c['filing_date']} "
                   f"Item {c['section']} {h.ranks}\n  {c['text'][:300]}...\n  {c['source_url']}")
+
+    elif a.cmd == "research":
+        from langgraph.types import Command
+
+        from .agents.desk import Tools, build_desk
+        from .agents.memory import Memory
+        from .graph.temporal import TemporalGraph
+        from .ingest.facts import FactStore
+        from .llm import chat
+        from .retrieval.index import Filters
+
+        if not settings.llm_api_key:
+            raise SystemExit("LLM_API_KEY is not set (.env). Any OpenAI-compatible free tier "
+                             "works, e.g. Groq or OpenRouter, or the Project 1 gateway.")
+        idx = _load_index()
+        tools = Tools(
+            search=lambda q, as_of, ticker, k: idx.search(
+                q, Filters(date.fromisoformat(as_of), (ticker,)), k=k),
+            facts=FactStore(DATA / "facts.db"), graph=TemporalGraph(DATA / "graph.db"),
+            memory=Memory(DATA / "memory.db"), human_in_loop=not a.auto)
+        desk = build_desk(lambda system, user: chat([{"role": "system", "content": system},
+                                                     {"role": "user", "content": user}]), tools)
+        cfg = {"configurable": {"thread_id": f"{a.ticker}-{time.time()}"}}
+        out = desk.invoke({"question": a.question, "ticker": a.ticker.upper(),
+                           "as_of": a.as_of, "user": a.user}, cfg)
+        while "__interrupt__" in out:
+            req = out["__interrupt__"][0].value
+            print(json.dumps(req, indent=2)[:3000])
+            ans = input("approve [Enter] / type a JSON reply: ").strip()
+            out = desk.invoke(Command(resume=json.loads(ans) if ans else {}), cfg)
+        for t in out["trace"]:
+            print(f"  {t['agent']:12} {t['secs']:>6}s  "
+                  f"{ {k: v for k, v in t.items() if k not in ('agent', 'secs')} }")
+        print("\n" + out["report"])
+        if a.out:
+            Path(a.out).write_text(out["report"], encoding="utf-8")
 
     elif a.cmd == "eval-retrieval":
         from .retrieval.evaluate import evaluate, load_golden, to_markdown
