@@ -100,4 +100,13 @@ With number-checking disabled, the false-claim rejection rate fell to 0.061 and 
 
 The reranker gives the best ordering (MRR +0.12 over BM25), but BM25 finds the most answers. Caveat: relevance is judged by exact answer phrases, which favours lexical search, and 26 questions is a small sample. Hybrid fusion also loses recall here, because dense results push lexical hits out of the top 10. Worth trying next: a larger fusion pool, or weighting BM25 more for numeric and entity questions. Building the embedded index took 46 minutes on CPU.
 
-**Backtest** (`desk backtest`): see [evals/results/backtest.json](evals/results/backtest.json).
+**Backtest** (`desk backtest --tickers sp100 --since 2018-01-01`; [evals/results/backtest.json](evals/results/backtest.json)). Signal: risk-factor deterioration between consecutive 10-Ks. Return: excess over SPY from the first close after the filing date.
+
+| Window | Filing pairs | Tickers | Spearman(signal, excess) | Noise band (±2/√n) | High − low tercile |
+|---|---|---|---|---|---|
+| 63 trading days | 512 | 78 | 0.033 | 0.088 | +1.2 pp |
+| 252 trading days | 441 | 77 | 0.018 | 0.095 | +3.9 pp |
+
+**Result: no usable signal.** Both correlations sit well inside the noise band. The tercile spread even points the "wrong" way: more new risk language goes with slightly *higher* later returns. This is reported as a negative result, not tuned until something looked significant.
+
+Coverage gaps in this run: 24 tickers produced no filing pairs because their Item 1A couldn't be split into individual factors: AMGN, AMT, AMZN, BMY, C, CSCO, DUK, EMR, GE, INTC, INTU, LLY, MCD, MET, MMM, MS, NOW, PFE, UNP, USB, VZ, WFC, WMT and XOM. BK is missing from SEC's ticker map. Fixing the risk-factor splitter for those filers would widen the sample.
