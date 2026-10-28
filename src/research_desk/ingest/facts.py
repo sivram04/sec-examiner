@@ -33,7 +33,7 @@ def flatten(ticker: str, facts: dict) -> list[tuple]:
 class FactStore:
     def __init__(self, sqlite_path: Path):
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(sqlite_path)
+        self.db = sqlite3.connect(sqlite_path, check_same_thread=False)
         self.db.execute(SCHEMA)
 
     def upsert(self, rows: list[tuple]) -> int:

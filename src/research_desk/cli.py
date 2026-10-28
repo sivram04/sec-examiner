@@ -330,7 +330,8 @@ def main() -> None:
             req = out["__interrupt__"][0].value
             print(json.dumps(req, indent=2)[:3000])
             ans = input("approve [Enter] / type a JSON reply: ").strip()
-            out = desk.invoke(Command(resume=json.loads(ans) if ans else {}), cfg)
+            # never resume with {}: an empty resume value re-raises the interrupt
+            out = desk.invoke(Command(resume=json.loads(ans) if ans else {"approve": True}), cfg)
         for t in out["trace"]:
             print(f"  {t['agent']:12} {t['secs']:>6}s  "
                   f"{ {k: v for k, v in t.items() if k not in ('agent', 'secs')} }")

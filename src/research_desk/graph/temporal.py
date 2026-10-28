@@ -40,7 +40,7 @@ class TemporalGraph:
     def __init__(self, path: Path | str = ":memory:"):
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.executescript(SCHEMA)
 
     def upsert(self, edges: list[Edge]) -> None:

@@ -181,9 +181,10 @@ async function handle(res) {
       <div style="display:flex;gap:8px;margin-top:8px"><button class="primary" id="go">Continue</button></div></div>`;
     $('#go').onclick = async () => {
       $('#go').disabled = true; $('#s-research').textContent = 'Running specialists, quant, debate and verification…';
-      let answer = {};
+      // never resume with {}: an empty resume value re-raises the interrupt
+      let answer = { approve: true };
       if (it.type === 'approve_plan') {
-        try { answer = { plan: JSON.parse($('#plan-edit').value) }; }
+        try { answer = { approve: true, plan: JSON.parse($('#plan-edit').value) }; }
         catch { $('#s-research').innerHTML = '<span class="err">Plan is not valid JSON.</span>'; $('#go').disabled = false; return; }
       }
       try { $('#plan').innerHTML = ''; await handle(await api(`/api/research/${encodeURIComponent(res.thread)}/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(answer) })); }

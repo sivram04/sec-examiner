@@ -40,9 +40,11 @@ def test_research_hitl_roundtrip_and_report_library(tmp_path):
     r = c.post("/api/research", json={"ticker": "AAPL", "question": "Margins?",
                                       "as_of": "2025-12-31"}).json()
     assert r["status"] == "needs_input" and r["interrupt"]["type"] == "approve_plan"
-    done = c.post(f"/api/research/{r['thread']}/resume", json={}).json()
-    while done["status"] == "needs_input":
-        done = c.post(f"/api/research/{r['thread']}/resume", json={}).json()
+    done = r
+    for _ in range(3):  # plan approval, then at most the flag review
+        if done["status"] != "needs_input":
+            break
+        done = c.post(f"/api/research/{r['thread']}/resume", json={"approve": True}).json()
     assert done["status"] == "done" and done["report"].startswith("# AAPL")
     lib = c.get("/api/reports").json()
     assert lib[0]["question"] == "Margins?"

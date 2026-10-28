@@ -176,7 +176,9 @@ def create_app(backend: Backend | None = None) -> FastAPI:
     def resume(thread: str, answer: dict):
         from langgraph.types import Command
 
-        out = be.desk.invoke(Command(resume=answer), {"configurable": {"thread_id": thread}})
+        # an empty resume value would re-raise the interrupt, so treat {} as plain approval
+        out = be.desk.invoke(Command(resume=answer or {"approve": True}),
+                             {"configurable": {"thread_id": thread}})
         return _desk_response(thread, out)
 
     return app
