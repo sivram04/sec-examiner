@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     # seconds between LLM calls; ~6s keeps under a 10 requests/minute free tier
     llm_min_interval: float = 6.0
     fred_api_key: str = ""
+    # comma-separated origins allowed to call the API (the Next.js app)
+    cors_origins: str = "http://localhost:3000,http://localhost:3011"
 
     postgres_url: str = "postgresql://desk:desk@localhost:5432/desk"
     redis_url: str = "redis://localhost:6379/0"

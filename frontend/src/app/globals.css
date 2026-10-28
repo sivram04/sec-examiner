@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f6f2;
+  --panel: #ffffff;
+  --ink: #1b1d1f;
+  --muted: #62676d;
+  --line: #e2e0d9;
+  --accent: #1f5f8b;
+  --accent-ink: #ffffff;
+  --good: #2f7d4f;
+  --bad: #b0412e;
+  --chip: #eef1f4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131517;
+    --panel: #1b1e21;
+    --ink: #e8e6e1;
+    --muted: #9aa0a6;
+    --line: #2c3035;
+    --accent: #6aa9d6;
+    --accent-ink: #0d1116;
+    --good: #6cc391;
+    --bad: #e58b78;
+    --chip: #242a30;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-chip: var(--chip);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.field {
+  @apply rounded-md border border-line bg-panel px-3 py-2 text-ink min-w-0;
+}
+.btn {
+  @apply rounded-md bg-accent px-4 py-2 font-semibold text-accent-ink disabled:cursor-progress disabled:opacity-60;
+}
+.card {
+  @apply mb-3 rounded-lg border border-line bg-panel px-4 py-3;
+}
+.note {
+  @apply text-[15px] leading-relaxed;
+}
+.note h1 { @apply mb-2 text-xl font-semibold; }
+.note h2 { @apply mt-6 mb-2 text-base font-semibold; }
+.note ul { @apply list-disc pl-5; }
+.note li { @apply my-1; }
+.note table { @apply my-2 w-full border-collapse text-sm; }
+.note td, .note th { @apply border border-line px-2 py-1.5 text-left align-top; }
+.note sup a { @apply text-accent no-underline; }

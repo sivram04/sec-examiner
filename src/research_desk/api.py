@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -102,6 +103,9 @@ def _desk_response(thread: str, out: dict) -> dict:
 def create_app(backend: Backend | None = None) -> FastAPI:
     be = backend or Backend()
     app = FastAPI(title="AI Research Desk")
+    # the Next.js front end (frontend/) runs on its own origin, locally and on Vercel
+    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins.split(","),
+                       allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
 
     @app.get("/")
     def index():
