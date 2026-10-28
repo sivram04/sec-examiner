@@ -46,6 +46,22 @@ def _load_index(**kw):
     return idx
 
 
+def _risk_factors(ec: EdgarClient, ticker: str, as_of: date | None, n: int | None,
+                  since: date | None = None) -> list[tuple[str, str, list]]:
+    """(filing_date, accession, risk factors) for 10-Ks, oldest first."""
+    from .graph.risks import split_risk_factors
+
+    filings = ec.filings(ticker, {"10-K"}, as_of, since=since)[:n]
+    out = []
+    for f in reversed(filings):
+        secs = {s.item: s for s in parse_sections(ec.document(f), f.form)}
+        if "1A" in secs:
+            out.append((f.filing_date.isoformat(), f.accession,
+                        split_risk_factors(secs["1A"].text, secs["1A"].headings)))
+        time.sleep(0.12)
+    return out
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="desk")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -84,6 +100,20 @@ def main() -> None:
     fx.add_argument("--tickers", default="sp100")
 
     sub.add_parser("stats", help="corpus document and chunk counts")
+
+    r = sub.add_parser("risks", help="diff risk factors between the two latest 10-Ks")
+    r.add_argument("ticker")
+    r.add_argument("--as-of", type=date.fromisoformat)
+    r.add_argument("--show-unchanged", action="store_true")
+
+    rg = sub.add_parser("risk-graph", help="load risk-factor validity spans into the graph")
+    rg.add_argument("--tickers", default="sp100")
+    rg.add_argument("--since", type=date.fromisoformat, default=date(2021, 1, 1))
+
+    wc = sub.add_parser("what-changed", help="risks that appeared/disappeared between dates")
+    wc.add_argument("ticker")
+    wc.add_argument("start")
+    wc.add_argument("end")
 
     q = sub.add_parser("search", help="hybrid search over the corpus")
     q.add_argument("query")
@@ -171,6 +201,41 @@ def main() -> None:
               f"tickers: {len({c['ticker'] for c in corpus})}")
         for form, n in sorted(Counter(c["form"] for c in docs.values()).items()):
             print(f"  {form:6} {n:>6,} documents")
+
+    elif a.cmd == "risks":
+        from .graph.risks import diff_risks
+
+        ec = EdgarClient()
+        old, new = _risk_factors(ec, a.ticker, a.as_of, 2)[-2:]
+        print(f"{a.ticker} 10-K risk factors: {old[0]} ({len(old[2])}) -> {new[0]} "
+              f"({len(new[2])})")
+        for c in diff_risks(old[2], new[2]):
+            if c.kind == "unchanged" and not a.show_unchanged:
+                continue
+            rf = c.new or c.old
+            print(f"  {c.kind.upper():9} {c.similarity:.2f}  {rf.headline[:150]}")
+
+    elif a.cmd == "risk-graph":
+        from .graph.risks import stable_snapshots
+        from .graph.temporal import TemporalGraph, edges_from_snapshots
+
+        ec, g = EdgarClient(), TemporalGraph(DATA / "graph.db")
+        for t in _tickers(a.tickers):
+            snaps = stable_snapshots(_risk_factors(ec, t, None, None, a.since))
+            edges = edges_from_snapshots(t, "HAS_RISK", "Risk", snaps)
+            g.upsert(edges)
+            print(f"{t:6} {len(snaps)} 10-Ks -> {len(edges)} risk edges")
+
+    elif a.cmd == "what-changed":
+        from .graph.temporal import TemporalGraph
+
+        added, removed = TemporalGraph(DATA / "graph.db").changed_between(
+            a.ticker.upper(), "HAS_RISK", a.start, a.end)
+        for label, es in (("NEW", added), ("DROPPED", removed)):
+            for e in es:
+                src = e.source_accession if label == "NEW" else e.ended_by
+                print(f"  {label:8} {e.object[:150]}  [{src}]")
+        print(f"{len(added)} new, {len(removed)} dropped risk factors")
 
     elif a.cmd == "search":
         from .retrieval.index import Filters

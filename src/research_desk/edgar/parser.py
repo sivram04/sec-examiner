@@ -41,6 +41,7 @@ class Section:
     title: str
     text: str
     tables: list[str] = field(default_factory=list)
+    headings: list[str] = field(default_factory=list)  # bold/italic paragraphs, in order
 
 
 def _table_text(table) -> str:
@@ -77,16 +78,62 @@ def _blocks(html: str) -> list[tuple[str, str]]:
         # only leaf-ish blocks, so nested divs don't duplicate text
         if el.find(["table", *BLOCK_TAGS]):
             continue
-        txt = re.sub(r"\s+", " ", el.get_text(" ", strip=True)).strip()
-        if txt:
+        txt = _norm(el.get_text(" ", strip=True))
+        if not txt:
+            continue
+        runs = _runs(el)
+        emph = sum(len(s) for s, e in runs if e)
+        total = sum(len(s) for s, _ in runs)
+        if len(txt) < 600 and total and emph >= 0.9 * total:
+            out.append(("emph", txt))
+            continue
+        # run-in headline: a bold sentence opening the paragraph its body continues
+        lead = _norm(" ".join(s for s, _ in _leading_emph(runs)))
+        if len(lead) >= 40 and lead.endswith((".", "?")) and txt.startswith(lead):
+            out.append(("emph", lead))
+            out.append(("text", txt[len(lead):].strip()))
+        else:
             out.append(("text", txt))
     return out
+
+
+EMPH_STYLE_RE = re.compile(r"font-weight:\s*(bold|[6-9]00)|font-style:\s*italic", re.IGNORECASE)
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _runs(el) -> list[tuple[str, bool]]:
+    """The block's text as (string, is_bold_or_italic) runs, in order."""
+    out = []
+    for s in el.find_all(string=True):
+        if not s.strip():
+            continue
+        e = False
+        for p in s.parents:
+            if p is el.parent:
+                break
+            if p.name in ("b", "strong", "i", "em") or EMPH_STYLE_RE.search(p.get("style", "")):
+                e = True
+                break
+        out.append((s.strip(), e))
+    return out
+
+
+def _leading_emph(runs: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
+    lead = []
+    for r in runs:
+        if not r[1]:
+            break
+        lead.append(r)
+    return lead
 
 
 def whole_document(html: str, form: str) -> Section:
     """One pseudo-section holding the full body, for unsectioned forms such as 8-K."""
     blocks = _blocks(html)
-    return Section("body", form, "\n\n".join(t for k, t in blocks if k == "text"),
+    return Section("body", form, "\n\n".join(t for k, t in blocks if k != "table"),
                    [t for k, t in blocks if k == "table"])
 
 
@@ -108,7 +155,7 @@ def parse_sections(html: str, form: str = "10-K") -> list[Section]:
     running: set[int] = set()
     part = "I"
     for i, (kind, txt) in enumerate(blocks):
-        if kind != "text" or not _is_heading(txt):
+        if kind == "table" or not _is_heading(txt):
             continue
         if RUNNING_RE.match(txt):
             running.add(i)
@@ -128,8 +175,9 @@ def parse_sections(html: str, form: str = "10-K") -> list[Section]:
     for n, (i, key) in enumerate(starts):
         end = starts[n + 1][0] if n + 1 < len(starts) else len(blocks)
         body = [b for j, b in enumerate(blocks[i + 1:end], i + 1) if j not in running]
-        text = "\n\n".join(t for k, t in body if k == "text")
-        sec = Section(key, names[key], text, [t for k, t in body if k == "table"])
+        text = "\n\n".join(t for k, t in body if k != "table")
+        sec = Section(key, names[key], text, [t for k, t in body if k == "table"],
+                      [t for k, t in body if k == "emph"])
         if key not in best or len(sec.text) > len(best[key][0].text):
             best[key] = (sec, range(i, end))
 
@@ -140,7 +188,7 @@ def parse_sections(html: str, form: str = "10-K") -> list[Section]:
     # first Item heading) is kept as "other" rather than silently dropped.
     covered = {j for _, span in best.values() for j in span}
     rest = [b for j, b in enumerate(blocks) if j not in covered and j not in running]
-    rest_text = "\n\n".join(t for k, t in rest if k == "text")
+    rest_text = "\n\n".join(t for k, t in rest if k != "table")
     if len(rest_text) >= MIN_OTHER_CHARS:
         out.append(Section("other", "Other / unsectioned", rest_text,
                            [t for k, t in rest if k == "table"]))
