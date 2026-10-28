@@ -8,7 +8,10 @@ from ..config import settings
 
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
-PAGE_URL = "https://data.sec.gov/submissions/{name}"
+# tickers whose SEC map now points at a new entity (e.g. a holding-company reorganization):
+# history lives under the predecessor CIK, so filings from both are merged
+PREDECESSORS = {"XOM": (34088,)}  # ExxonMobil Holdings Corp <- Exxon Mobil Corp
+PAGE_URL ="https://data.sec.gov/submissions/{name}"
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/{doc}"
 
@@ -70,16 +73,21 @@ class EdgarClient:
         """Filings newest first. With since, older submission pages are fetched as needed:
         'recent' holds only the last ~1000 filings, which busy filers exhaust within months.
         """
-        cik = self.cik(ticker)
-        subs = self.http.get(SUBMISSIONS_URL.format(cik=cik)).raise_for_status().json()
-        out = parse_filings(cik, subs, forms, as_of)
+        out: list[Filing] = []
+        for cik in (self.cik(ticker), *PREDECESSORS.get(ticker.upper(), ())):
+            subs = self.http.get(SUBMISSIONS_URL.format(cik=cik)).raise_for_status().json()
+            out += parse_filings(cik, subs, forms, as_of)
+            if since:
+                for page in subs["filings"].get("files", []):
+                    if date.fromisoformat(page["filingTo"]) < since:
+                        continue
+                    block = self.http.get(
+                        PAGE_URL.format(name=page["name"])).raise_for_status().json()
+                    out += _parse_block(cik, block, forms, as_of)
         if since:
-            for page in subs["filings"].get("files", []):
-                if date.fromisoformat(page["filingTo"]) < since:
-                    continue
-                block = self.http.get(PAGE_URL.format(name=page["name"])).raise_for_status().json()
-                out += _parse_block(cik, block, forms, as_of)
             out = [f for f in out if f.filing_date >= since]
+        # a joint filing appears under both entities: keep one copy per accession
+        out = list({f.accession: f for f in reversed(out)}.values())
         return sorted(out, key=lambda f: f.filing_date, reverse=True)
 
     def company_facts(self, ticker: str) -> dict:
