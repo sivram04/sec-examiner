@@ -29,6 +29,11 @@ class Verdict:
     reasons: list[str] = field(default_factory=list)
 
 
+# ISO dates in evidence labels ("period ending 2025-03-31") back the day in "March 31, 2025"
+# (only the report period: the filing date says when it was filed, not what it covers)
+ISO_DATE_RE = re.compile(r"period ending \d{4}-(\d{2})-(\d{2})\b")
+
+
 def numbers(text: str) -> set[str]:
     out = set()
     for m in NUM_RE.findall(text):
@@ -65,7 +70,10 @@ def mentions(text: str) -> list[set[str]]:
 
 def pool(text: str) -> set[str]:
     """Every form of every number a source states, scaled amounts included."""
-    return numbers(text) | set(_scaled(text).values())
+    iso = {str(int(part)) for m in ISO_DATE_RE.findall(text) for part in m}
+    # ISO dates are labels, not data: their parts must not back arbitrary numbers
+    body = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", " ", text)
+    return numbers(body) | set(_scaled(body).values()) | iso
 
 
 def _render(v) -> str:

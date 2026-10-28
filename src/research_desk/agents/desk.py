@@ -98,6 +98,8 @@ CLAIMS_SPEC = (
     'Reply with JSON only: {"claims": [{"text": "...", "citations": ["<evidence id>", ...]}]}. '
     "Every claim must cite evidence ids from the list given. Each claim states only what its "
     "cited evidence says: no adjectives, predictions or judgements the source doesn't make. "
+    "If the source gives several causes, keep all of them. Take dates and periods only from "
+    "the evidence label or text; if the period isn't stated, don't name one. "
     "Make only claims that bear directly on the question; skip general financial facts that "
     "don't. Use numbers only as they appear in the cited evidence or in quant results (cite "
     "those as quant:<metric>); never compute, round or convert numbers yourself. 3 to 6 claims.")
@@ -161,7 +163,10 @@ def build_desk(llm: LLM, tools: Tools):
         for q in s["plan"]["queries"]:
             for h in tools.search(q, as_of=s["as_of"], ticker=s["ticker"], k=5):
                 c = h.chunk
-                ev[c["id"][:12]] = {"label": f"{c['form']} filed {c['filing_date']}, "
+                # the period lives in metadata, not the passage: without it the model guesses
+                # which quarter "grew 40%" refers to, and the judge can't check the date
+                period = f" for the period ending {c['period']}" if c.get("period") else ""
+                ev[c["id"][:12]] = {"label": f"{c['form']}{period}, filed {c['filing_date']}, "
                                              f"Item {c['section']}", "source": c["source_url"],
                                     "text": c["text"]}
         if tools.graph:
@@ -211,7 +216,8 @@ def build_desk(llm: LLM, tools: Tools):
 
     def critic(s: DeskState) -> dict:
         t0 = time.time()
-        ev = {k: v["text"] for k, v in s.get("evidence", {}).items()}
+        # labels carry the report period, which may back a date in a claim
+        ev = {k: f"({v['label']})\n{v['text']}" for k, v in s.get("evidence", {}).items()}
         vs = verify([Claim(**c) for c in s.get("claims", [])], ev, s.get("quant", {}),
                     tools.judge)
         verdicts = [{"claim": v.claim.__dict__, "ok": v.ok, "reasons": v.reasons} for v in vs]

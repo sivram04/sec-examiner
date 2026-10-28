@@ -61,7 +61,8 @@ def main() -> int:
             out = desk.invoke({"question": q["question"], "ticker": q["ticker"],
                                "as_of": q["as_of"]}, {"configurable": {"thread_id": q["id"]}})
             secs = time.time() - t0  # report time only; judge calls below are eval overhead
-            ev = {k: v["text"] for k, v in out["evidence"].items()}
+            # the label carries form, period and filing date, which claims may cite
+            ev = {k: f"({v['label']})\n{v['text']}" for k, v in out["evidence"].items()}
             accepted = [v["claim"] for v in out["verdicts"] if v["ok"]]
             supported = [judge(c["text"], "\n---\n".join(
                 ev.get(cid, json.dumps(out["quant"].get(cid[6:], {}))) for cid in c["citations"]))

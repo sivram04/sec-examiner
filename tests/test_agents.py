@@ -42,6 +42,13 @@ def test_numbers_ignores_years_and_normalizes():
         "6.4", "416161", "1.5"}
 
 
+def test_claim_dates_backed_by_label_period_but_still_checked():
+    ev = {"c1": "(10-Q for the period ending 2025-03-31, filed 2025-04-30)\nAzure grew 33%."}
+    v = verify([Claim("Azure grew 33% in the quarter ended March 31, 2025.", ["c1"]),
+                Claim("Azure grew 33% in the quarter ended March 30, 2025.", ["c1"])], ev, {})
+    assert [x.ok for x in v] == [True, False]
+
+
 def test_critic_matches_scaled_amounts_both_ways():
     ev = {"c1": "The Commission imposed a fine of €500 million.", "c2": "Fine: 500,000,000 EUR."}
     v = verify([Claim("Apple was fined 500,000,000 EUR.", ["c1"]),
