@@ -17,6 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import httpx
+
 from research_desk.config import settings
 
 JUDGE = ("You check citations. Answer only YES or NO: does the SOURCE text directly support "
@@ -52,17 +54,22 @@ def main() -> int:
         q, Filters(date.fromisoformat(as_of), (ticker,)), k=k),
         facts=FactStore(DATA / "facts.db"), human_in_loop=False)
     desk = build_desk(llm, tools)
-    rows = []
+    rows, errors = [], []
     for q in load_golden(ROOT / "evals" / "retrieval_golden.jsonl")[: a.limit]:
         t0 = time.time()
-        out = desk.invoke({"question": q["question"], "ticker": q["ticker"], "as_of": q["as_of"]},
-                          {"configurable": {"thread_id": q["id"]}})
-        secs = time.time() - t0
-        ev = {k: v["text"] for k, v in out["evidence"].items()}
-        accepted = [v["claim"] for v in out["verdicts"] if v["ok"]]
-        supported = [judge(c["text"], "\n---\n".join(
-            ev.get(cid, json.dumps(out["quant"].get(cid[6:], {}))) for cid in c["citations"]))
-            for c in accepted]
+        try:
+            out = desk.invoke({"question": q["question"], "ticker": q["ticker"],
+                               "as_of": q["as_of"]}, {"configurable": {"thread_id": q["id"]}})
+            secs = time.time() - t0  # report time only; judge calls below are eval overhead
+            ev = {k: v["text"] for k, v in out["evidence"].items()}
+            accepted = [v["claim"] for v in out["verdicts"] if v["ok"]]
+            supported = [judge(c["text"], "\n---\n".join(
+                ev.get(cid, json.dumps(out["quant"].get(cid[6:], {}))) for cid in c["citations"]))
+                for c in accepted]
+        except httpx.HTTPError as e:  # rate limit outlasting retries: record it, keep going
+            errors.append({"id": q["id"], "error": str(e)[:200]})
+            print(errors[-1])
+            continue
         rows.append({"id": q["id"], "secs": round(secs, 1), "claims": len(out["verdicts"]),
                      "accepted": len(accepted), "supported": sum(supported)})
         print(rows[-1])
@@ -77,7 +84,7 @@ def main() -> int:
         "llm_calls": len(USAGE),
         "prompt_tokens": sum(u["prompt_tokens"] or 0 for u in USAGE),
         "completion_tokens": sum(u["completion_tokens"] or 0 for u in USAGE),
-        "model": settings.llm_model, "rows": rows}
+        "model": settings.llm_model, "errors": errors, "rows": rows}
     out_path = ROOT / "evals" / "results" / "llm_evals.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(summary, indent=2) + "\n")

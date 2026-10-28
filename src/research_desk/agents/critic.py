@@ -35,8 +35,37 @@ def numbers(text: str) -> set[str]:
         n = m.replace(",", "")
         if YEAR_RE.match(n) or n in {"0", "1"}:
             continue
-        out.add(n.rstrip("0").rstrip(".") if "." in n else n)
+        out.add(_canon(n))
     return out
+
+
+def _canon(n: str) -> str:
+    return n.rstrip("0").rstrip(".") if "." in n else n
+
+
+SCALES = {"thousand": 1e3, "million": 1e6, "billion": 1e9, "trillion": 1e12}
+SCALED_RE = re.compile(r"(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*"
+                       r"(thousand|million|billion|trillion)\b", re.IGNORECASE)
+
+
+def _scaled(text: str) -> dict[str, str]:
+    """'€500 million' -> {'500': '500000000'}: the same amount written two ways."""
+    out = {}
+    for num, word in SCALED_RE.findall(text):
+        raw = num.replace(",", "")
+        out[_canon(raw)] = _canon(f"{float(raw) * SCALES[word.lower()]:.0f}")
+    return out
+
+
+def mentions(text: str) -> list[set[str]]:
+    """Each number in text with its equivalent forms; a mention is backed if any form is."""
+    sc = _scaled(text)
+    return [{n, sc[n]} if n in sc else {n} for n in numbers(text)]
+
+
+def pool(text: str) -> set[str]:
+    """Every form of every number a source states, scaled amounts included."""
+    return numbers(text) | set(_scaled(text).values())
 
 
 def _render(v) -> str:
@@ -71,8 +100,8 @@ def verify(claims: list[Claim], evidence: dict[str, str], quant: dict[str, dict]
                 reasons.append(f"unknown citation {cid}")
         if not c.citations:
             reasons.append("no citation")
-        pool = numbers(" ".join(cited_text))
-        missing = sorted(numbers(c.text) - pool)
+        have = pool(" ".join(cited_text))
+        missing = sorted(min(forms) for forms in mentions(c.text) if not forms & have)
         if missing:
             reasons.append(f"numbers not in cited sources: {', '.join(missing)}")
         if not reasons and judge and not judge(c.text, "\n---\n".join(cited_text)):

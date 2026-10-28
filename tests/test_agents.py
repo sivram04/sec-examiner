@@ -42,6 +42,14 @@ def test_numbers_ignores_years_and_normalizes():
         "6.4", "416161", "1.5"}
 
 
+def test_critic_matches_scaled_amounts_both_ways():
+    ev = {"c1": "The Commission imposed a fine of €500 million.", "c2": "Fine: 500,000,000 EUR."}
+    v = verify([Claim("Apple was fined 500,000,000 EUR.", ["c1"]),
+                Claim("Apple was fined EUR 500 million.", ["c2"]),
+                Claim("Apple was fined EUR 600 million.", ["c1"])], ev, {})
+    assert [x.ok for x in v] == [True, True, False]
+
+
 def test_critic_rejects_uncited_and_invented_numbers():
     ev = {"c1": "Net sales were $416,161 million."}
     quant = {"Revenues": {"growth_pct": 6.4}}

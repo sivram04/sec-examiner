@@ -96,9 +96,11 @@ def _evidence_block(ev: dict[str, dict], limit: int = 40, chars: int = 900) -> s
 
 CLAIMS_SPEC = (
     'Reply with JSON only: {"claims": [{"text": "...", "citations": ["<evidence id>", ...]}]}. '
-    "Every claim must cite evidence ids from the list given. Use numbers only as they appear in "
-    "the cited evidence or in quant results (cite those as quant:<metric>); never compute, "
-    "round or convert numbers yourself. 3 to 6 claims.")
+    "Every claim must cite evidence ids from the list given. Each claim states only what its "
+    "cited evidence says: no adjectives, predictions or judgements the source doesn't make. "
+    "Make only claims that bear directly on the question; skip general financial facts that "
+    "don't. Use numbers only as they appear in the cited evidence or in quant results (cite "
+    "those as quant:<metric>); never compute, round or convert numbers yourself. 3 to 6 claims.")
 
 
 def build_desk(llm: LLM, tools: Tools):
