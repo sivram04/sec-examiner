@@ -31,6 +31,7 @@ class Backend:
     data: Path = DATA
     index: Any = None
     llm: Any = None
+    fetch_releases: bool = True   # earnings releases come from SEC; off for offline tests
 
     @cached_property
     def idx(self):
@@ -58,6 +59,14 @@ class Backend:
 
         return Memory(self.data / "memory.db")
 
+    def _releases(self, ticker: str, as_of: str) -> list[dict]:
+        from .edgar.client import EdgarClient
+        from .ingest.releases import releases
+
+        if not self.fetch_releases:
+            return []
+        return releases(EdgarClient(), ticker, as_of, self.data / "releases")
+
     @cached_property
     def desk(self):
         from .agents.desk import Tools, build_desk
@@ -74,7 +83,8 @@ class Backend:
                              {"role": "user", "content": user}])
         tools = Tools(search=lambda q, as_of, ticker, k: self.idx.search(
             q, Filters(date.fromisoformat(as_of), (ticker,)), k=k),
-            facts=self.facts, graph=self.graph, memory=self.memory)
+            facts=self.facts, graph=self.graph, memory=self.memory,
+            releases=self._releases)
         return build_desk(llm, tools)
 
 

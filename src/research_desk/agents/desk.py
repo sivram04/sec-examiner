@@ -68,6 +68,7 @@ class Tools:
     facts: Any = None                           # FactStore
     graph: Any = None                           # TemporalGraph
     memory: Any = None                          # Memory
+    releases: Callable[[str, str], list[dict]] | None = None  # (ticker, as_of) -> releases
     sandbox_mode: str = "subprocess"
     judge: Callable[[str, str], bool] | None = None
     human_in_loop: bool = True
@@ -179,11 +180,35 @@ def build_desk(llm: LLM, tools: Tools):
             for e in removed:
                 ev[f"risk-:{e.id[:8]}"] = {"label": "risk factor removed in the last year",
                                            "source": e.ended_by, "text": e.object}
+            # entity changes from the knowledge graph (suppliers, customers, segments, ...)
+            from ..graph.extract import RELATIONS
+
+            for rel in RELATIONS.values():
+                added, removed = tools.graph.changed_between(
+                    s["ticker"], rel, (end - timedelta(days=400)).isoformat(), end.isoformat())
+                for e, what in [(e, "newly named") for e in added] + \
+                        [(e, "no longer named") for e in removed]:
+                    ev[f"kg:{e.id[:8]}"] = {
+                        "label": f"10-K knowledge graph: {e.object_type} {what} "
+                                 f"({rel}, {e.valid_from if what == 'newly named' else e.valid_to})",
+                        "source": e.source_accession if what == "newly named" else e.ended_by,
+                        "text": f"{e.object}: {e.evidence}"}
         return {"evidence": ev, "trace": _trace(s, "risk", t0, evidence=len(ev))}
 
     def transcript(s: DeskState) -> dict:
-        # no transcript source is ingested yet; say so rather than guess
-        return {"trace": _trace(s, "transcript", time.time(), status="no transcripts ingested")}
+        # earnings releases (8-K Ex. 99.1) stand in for call transcripts, which aren't freely
+        # licensed; tone is counted in code (ingest/releases.py), not judged by the LLM
+        t0 = time.time()
+        if not tools.releases:
+            return {"trace": _trace(s, "transcript", t0, status="no release source configured")}
+        ev = dict(s.get("evidence", {}))
+        rel = tools.releases(s["ticker"], s["as_of"])
+        for r in rel:
+            ev[f"release:{r['accession'][-8:]}"] = {
+                "label": f"earnings release (8-K Ex. 99.1), filed {r['filed']}",
+                "source": r["accession"],
+                "text": f"Tone (lexicon count): {r['tone'].as_text()}.\n\n{r['text'][:2500]}"}
+        return {"evidence": ev, "trace": _trace(s, "transcript", t0, releases=len(rel))}
 
     def quant(s: DeskState) -> dict:
         t0 = time.time()

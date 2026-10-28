@@ -11,7 +11,7 @@ from .test_agents import CHUNK, ScriptedLLM
 def make_client(tmp_path):
     idx = HybridIndex(HashEmbedder())
     idx.add([CHUNK])
-    be = Backend(data=tmp_path, index=idx, llm=ScriptedLLM([]))
+    be = Backend(data=tmp_path, index=idx, llm=ScriptedLLM([]), fetch_releases=False)
     g = TemporalGraph(tmp_path / "graph.db")
     g.upsert(edges_from_snapshots("AAPL", "HAS_RISK", "Risk", [
         ("2024-11-01", "a1", {"old risk": "e"}), ("2025-10-31", "a2", {"tariff risk": "e2"})]))

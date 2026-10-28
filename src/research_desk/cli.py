@@ -118,6 +118,17 @@ def main() -> None:
     rg.add_argument("--tickers", default="sp100")
     rg.add_argument("--since", type=date.fromisoformat, default=date(2021, 1, 1))
 
+    ge = sub.add_parser("graph-extract", help="LLM-extract grounded entities from 10-K Item 1")
+    ge.add_argument("--tickers", default="AAPL,MSFT,NVDA")
+    ge.add_argument("--since", type=date.fromisoformat, default=date(2022, 1, 1))
+
+    gq = sub.add_parser("graph-query", help="entities named/dropped between two dates")
+    gq.add_argument("ticker")
+    gq.add_argument("relation", help="HAS_SEGMENT, HAS_EXECUTIVE, SELLS_PRODUCT, "
+                                     "NAMES_SUPPLIER, NAMES_CUSTOMER, NAMES_COMPETITOR")
+    gq.add_argument("start")
+    gq.add_argument("end")
+
     wc = sub.add_parser("what-changed", help="risks that appeared/disappeared between dates")
     wc.add_argument("ticker")
     wc.add_argument("start")
@@ -248,6 +259,48 @@ def main() -> None:
             g.upsert(edges)
             print(f"{t:6} {len(snaps)} 10-Ks -> {len(edges)} risk edges")
 
+    elif a.cmd == "graph-extract":
+        from .graph.extract import RELATIONS, Entity, extract
+        from .graph.temporal import TemporalGraph, edges_from_snapshots
+        from .llm import chat
+
+        if not settings.llm_api_key:
+            raise SystemExit("LLM_API_KEY is not set (.env)")
+        ec, g = EdgarClient(), TemporalGraph(DATA / "graph.db")
+        cache = DATA / "entities"
+        cache.mkdir(parents=True, exist_ok=True)
+
+        def llm(system: str, user: str) -> str:
+            return chat([{"role": "system", "content": system}, {"role": "user", "content": user}])
+
+        for t in _tickers(a.tickers):
+            snaps: dict[str, list] = {rel: [] for rel in RELATIONS.values()}
+            for f in reversed(ec.filings(t, {"10-K"}, since=a.since)):
+                path = cache / f"{f.accession}.json"
+                if path.exists():
+                    ents = [Entity(**e) for e in json.loads(path.read_text(encoding="utf-8"))]
+                else:
+                    secs = {s.item: s for s in parse_sections(ec.document(f), f.form)}
+                    ents = extract(secs["1"].text, llm) if "1" in secs else []
+                    path.write_text(json.dumps([e.__dict__ for e in ents]), encoding="utf-8")
+                for typ, rel in RELATIONS.items():
+                    snaps[rel].append((f.filing_date.isoformat(), f.accession,
+                                       {e.name: e.quote for e in ents if e.type == typ}))
+                print(f"{t:6} {f.filing_date} {len(ents):3} grounded entities")
+            for typ, rel in RELATIONS.items():
+                g.upsert(edges_from_snapshots(t, rel, typ, snaps[rel]))
+
+    elif a.cmd == "graph-query":
+        from .graph.temporal import TemporalGraph
+
+        added, removed = TemporalGraph(DATA / "graph.db").changed_between(
+            a.ticker.upper(), a.relation, a.start, a.end)
+        for label, es in (("NEW", added), ("DROPPED", removed)):
+            for e in es:
+                print(f"  {label:8} {e.object}  [{e.source_accession if label == 'NEW' else e.ended_by}]")
+                print(f"           \"{e.evidence[:140]}\"")
+        print(f"{len(added)} new, {len(removed)} dropped ({a.relation})")
+
     elif a.cmd == "what-changed":
         from .graph.temporal import TemporalGraph
 
@@ -309,6 +362,7 @@ def main() -> None:
         from .agents.memory import Memory
         from .graph.temporal import TemporalGraph
         from .ingest.facts import FactStore
+        from .ingest.releases import releases
         from .llm import chat
         from .retrieval.index import Filters
 
@@ -320,7 +374,8 @@ def main() -> None:
             search=lambda q, as_of, ticker, k: idx.search(
                 q, Filters(date.fromisoformat(as_of), (ticker,)), k=k),
             facts=FactStore(DATA / "facts.db"), graph=TemporalGraph(DATA / "graph.db"),
-            memory=Memory(DATA / "memory.db"), human_in_loop=not a.auto)
+            memory=Memory(DATA / "memory.db"), human_in_loop=not a.auto,
+            releases=lambda t, as_of: releases(EdgarClient(), t, as_of, DATA / "releases"))
         desk = build_desk(lambda system, user: chat([{"role": "system", "content": system},
                                                      {"role": "user", "content": user}]), tools)
         cfg = {"configurable": {"thread_id": f"{a.ticker}-{time.time()}"}}
