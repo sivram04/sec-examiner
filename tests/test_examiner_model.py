@@ -48,7 +48,9 @@ def test_recipe_section_choice_is_respected():
     cases, secs = corpus()
     # train only on Item 1A, where the synthetic filings have no text: nothing to learn from
     ex = train("t", cases, secs, lambda c: [], recipe=Recipe(sections=("1A", "8")), log=quiet)
-    assert ex.meta["with_text"] == 0 and ex.meta["recipe"]["sections"] == ["1A", "8"]
+    assert ex.meta["with_text"] == 0 and list(ex.meta["recipe"]["sections"]) == ["1A", "8"]
+    assert ex.weight_text == 0.0                      # priors only, no crash
+    assert len(ex.predict(case(1, "2024-02-01", []), [], {"7": NG_TEXT})) == len(LABELS)
 
 
 def test_priors_ignore_letters_after_the_filing():
