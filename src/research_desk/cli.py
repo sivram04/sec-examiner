@@ -14,6 +14,7 @@ from .edgar.parser import parse_sections
 DATA = Path("data")
 CHUNKS = DATA / "chunks"
 LETTERS = DATA / "examiner" / "letters.jsonl"
+FILINGS = DATA / "examiner" / "filings"
 
 
 def _tickers(arg: str) -> list[str]:
@@ -162,6 +163,12 @@ def main() -> None:
     xb.add_argument("--start", type=date.fromisoformat, default=date(2023, 1, 1))
     xb.add_argument("--end", type=date.fromisoformat, default=date(2024, 12, 31))
     xb.add_argument("--limit", type=int, help="stop after this many kept letters")
+
+    sub.add_parser("examiner-fetch", help="fetch and cache the filings the SEC reviewed")
+
+    xt = sub.add_parser("examiner-train", help="train a version and grade it with the judge")
+    xt.add_argument("--version", required=True, help="e.g. v1")
+    xt.add_argument("--test-from", default="2024-01-01")
 
     js = sub.add_parser("judge-seal", help="hash-seal the judge after a deliberate change")
     js.add_argument("--yes", action="store_true", help="confirm: you changed the judge on purpose")
@@ -413,6 +420,28 @@ def main() -> None:
 
         stats = build(EdgarClient(), a.start, a.end, LETTERS, limit=a.limit)
         print(stats)
+
+    elif a.cmd == "examiner-fetch":
+        from .examiner.filings import fetch_all
+        from .judge.cases import cases_from
+        from .judge.harness import load_records
+
+        cases = cases_from(load_records(LETTERS))
+        print(f"{len(cases)} reviewed filings")
+        print(fetch_all(EdgarClient(), cases, FILINGS))
+
+    elif a.cmd == "examiner-train":
+        from .examiner.run import train_and_grade
+        from .judge.harness import load_records
+
+        meta = train_and_grade(load_records(LETTERS), FILINGS, DATA / "examiner" / "models",
+                               a.version, test_from=a.test_from)
+        o, g = meta["test"]["overall"], meta["gate"]
+        print(f"\n{a.version}: n={o['n']} precision@5={o['precision']:.3f} "
+              f"recall@5={o['recall']:.3f} f1={o['f1']:.3f} hit={o['hit_rate']:.3f} "
+              f"| {meta['test']['mean_secs'] * 1000:.0f} ms/review, ${meta['test']['cost_usd']}")
+        print(f"gate: {'PASS' if g['passed'] else 'FAIL'}  best baseline {g['best_baseline']} "
+              f"f1={g['best_baseline_f1']:.3f}  checks={g['checks']}")
 
     elif a.cmd == "judge-seal":
         from .judge.harness import seal

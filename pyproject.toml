@@ -15,6 +15,9 @@ dependencies = [
   "langgraph>=1.0",
   "mcp>=2.0",
   "yfinance>=0.2",
+  "pypdf>=5",
+  "scikit-learn>=1.5",
+  "joblib>=1.4",
 ]
 
 [project.optional-dependencies]
