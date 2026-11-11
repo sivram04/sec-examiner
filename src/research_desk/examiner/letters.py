@@ -4,6 +4,7 @@ EDGAR full-text search indexes a text extract of every letter, so no PDF parsing
 Search pages are capped (~10k results per query), so queries run one month at a time.
 """
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 
@@ -139,9 +140,13 @@ def search(http, start: date, end: date) -> list[dict]:
     for a, b in months(start, end):
         offset = 0
         while True:
-            r = http.get(SEARCH_URL, params={
-                "q": SUBSTANTIVE_Q, "forms": "UPLOAD", "dateRange": "custom",
-                "startdt": a.isoformat(), "enddt": b.isoformat(), "from": str(offset)})
+            params = {"q": SUBSTANTIVE_Q, "forms": "UPLOAD", "dateRange": "custom",
+                      "startdt": a.isoformat(), "enddt": b.isoformat(), "from": str(offset)}
+            for attempt in range(6):          # full-text search returns transient 5xx
+                r = http.get(SEARCH_URL, params=params)
+                if r.status_code < 500 and r.status_code != 429:
+                    break
+                time.sleep(min(60, 5 * 2 ** attempt))
             r.raise_for_status()
             page = r.json().get("hits", {}).get("hits", [])
             hits += page
