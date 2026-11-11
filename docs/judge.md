@@ -55,3 +55,16 @@ What v1's numbers say, and where v2 should look:
 - The training history starts in 2023, so early-2024 cases have only a year of prior letters. Adding 2018–2022 is a re-run of `examiner-build`.
 - Topic labels are rules; about 20% of comments fall outside the taxonomy. An LLM-assisted labeler checked against a hand-labeled sample is the next judge improvement, and it must be sealed like any other judge change.
 - Scoring is at topic level. Section-level scoring (did we flag the right passage?) is the next metric to add.
+
+## Self-improvement loop results (2026-11-11)
+
+Selection = filings Jan–Feb 2024 (266 cases, used to choose); holdout = Mar 2024+ (306, reported only).
+
+| Version | Parent | Change (proposed by Gemini) | Selection F1 | Holdout F1 | Decision |
+|---|---|---|---|---|---|
+| v2 | — | default recipe (bootstrap) | 0.359 | 0.318 | champion |
+| v3 | v2 | val_fraction 0.35, priors 0.2/0.2/0.6 (recent-weighted), max_features 100k | **0.366** | **0.345** | **promote** |
+| v4 | v3 | val_fraction 0.2, max_features 150k, trigrams | 0.366 | 0.341 | reject (no gain) |
+| v5 | v3 | val_fraction 0.25, min_df 2, max_features 150k | 0.363 | 0.315 | reject (no gain) |
+
+The holdout gain for v3 (+0.027) is larger than the selection gain (+0.007), so the promotion generalised rather than overfitting the selection window. Bigger vocabularies (v4, v5) did not help.
