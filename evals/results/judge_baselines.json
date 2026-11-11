@@ -1,0 +1,462 @@
+{
+  "base_rate": {
+    "k": 5,
+    "overall": {
+      "n": 572,
+      "precision": 0.188,
+      "recall": 0.559,
+      "f1": 0.282,
+      "hit_rate": 0.708
+    },
+    "by_year": {
+      "2024": {
+        "n": 572,
+        "precision": 0.188,
+        "recall": 0.559,
+        "f1": 0.282,
+        "hit_rate": 0.708
+      }
+    },
+    "topic_recall": {
+      "non_gaap": {
+        "n": 234,
+        "recall": 1.0
+      },
+      "mdna_drivers": {
+        "n": 125,
+        "recall": 1.0
+      },
+      "segments": {
+        "n": 82,
+        "recall": 0.134
+      },
+      "audit_exhibits": {
+        "n": 82,
+        "recall": 1.0
+      },
+      "controls": {
+        "n": 82,
+        "recall": 0.0
+      },
+      "revenue_recognition": {
+        "n": 56,
+        "recall": 0.821
+      },
+      "presentation": {
+        "n": 52,
+        "recall": 0.0
+      },
+      "liquidity": {
+        "n": 42,
+        "recall": 0.0
+      },
+      "geopolitical": {
+        "n": 41,
+        "recall": 1.0
+      },
+      "impairment": {
+        "n": 28,
+        "recall": 0.0
+      },
+      "cybersecurity": {
+        "n": 25,
+        "recall": 0.0
+      },
+      "financial_instruments": {
+        "n": 24,
+        "recall": 0.0
+      },
+      "known_trends": {
+        "n": 22,
+        "recall": 0.0
+      },
+      "mining_reserves": {
+        "n": 21,
+        "recall": 0.0
+      },
+      "income_taxes": {
+        "n": 16,
+        "recall": 0.0
+      },
+      "governance_proxy": {
+        "n": 15,
+        "recall": 0.0
+      },
+      "legal_contingencies": {
+        "n": 14,
+        "recall": 0.0
+      },
+      "risk_factors": {
+        "n": 12,
+        "recall": 0.0
+      },
+      "business_disclosure": {
+        "n": 9,
+        "recall": 0.0
+      },
+      "crypto": {
+        "n": 8,
+        "recall": 0.0
+      },
+      "critical_estimates": {
+        "n": 6,
+        "recall": 0.0
+      },
+      "kpis": {
+        "n": 6,
+        "recall": 0.0
+      }
+    },
+    "cost_usd": 0.0,
+    "mean_secs": 0.0042,
+    "window": [
+      "2024-01-01",
+      "9999"
+    ]
+  },
+  "recent_base_rate": {
+    "k": 5,
+    "overall": {
+      "n": 572,
+      "precision": 0.187,
+      "recall": 0.558,
+      "f1": 0.281,
+      "hit_rate": 0.706
+    },
+    "by_year": {
+      "2024": {
+        "n": 572,
+        "precision": 0.187,
+        "recall": 0.558,
+        "f1": 0.281,
+        "hit_rate": 0.706
+      }
+    },
+    "topic_recall": {
+      "non_gaap": {
+        "n": 234,
+        "recall": 1.0
+      },
+      "mdna_drivers": {
+        "n": 125,
+        "recall": 1.0
+      },
+      "segments": {
+        "n": 82,
+        "recall": 0.183
+      },
+      "audit_exhibits": {
+        "n": 82,
+        "recall": 1.0
+      },
+      "controls": {
+        "n": 82,
+        "recall": 0.012
+      },
+      "revenue_recognition": {
+        "n": 56,
+        "recall": 0.714
+      },
+      "presentation": {
+        "n": 52,
+        "recall": 0.0
+      },
+      "liquidity": {
+        "n": 42,
+        "recall": 0.0
+      },
+      "geopolitical": {
+        "n": 41,
+        "recall": 0.951
+      },
+      "impairment": {
+        "n": 28,
+        "recall": 0.0
+      },
+      "cybersecurity": {
+        "n": 25,
+        "recall": 0.0
+      },
+      "financial_instruments": {
+        "n": 24,
+        "recall": 0.0
+      },
+      "known_trends": {
+        "n": 22,
+        "recall": 0.0
+      },
+      "mining_reserves": {
+        "n": 21,
+        "recall": 0.0
+      },
+      "income_taxes": {
+        "n": 16,
+        "recall": 0.0
+      },
+      "governance_proxy": {
+        "n": 15,
+        "recall": 0.0
+      },
+      "legal_contingencies": {
+        "n": 14,
+        "recall": 0.0
+      },
+      "risk_factors": {
+        "n": 12,
+        "recall": 0.0
+      },
+      "business_disclosure": {
+        "n": 9,
+        "recall": 0.0
+      },
+      "crypto": {
+        "n": 8,
+        "recall": 0.0
+      },
+      "critical_estimates": {
+        "n": 6,
+        "recall": 0.0
+      },
+      "kpis": {
+        "n": 6,
+        "recall": 0.0
+      }
+    },
+    "cost_usd": 0.0,
+    "mean_secs": 0.0009,
+    "window": [
+      "2024-01-01",
+      "9999"
+    ]
+  },
+  "industry_rate": {
+    "k": 5,
+    "overall": {
+      "n": 572,
+      "precision": 0.201,
+      "recall": 0.604,
+      "f1": 0.302,
+      "hit_rate": 0.755
+    },
+    "by_year": {
+      "2024": {
+        "n": 572,
+        "precision": 0.201,
+        "recall": 0.604,
+        "f1": 0.302,
+        "hit_rate": 0.755
+      }
+    },
+    "topic_recall": {
+      "non_gaap": {
+        "n": 234,
+        "recall": 0.957
+      },
+      "mdna_drivers": {
+        "n": 125,
+        "recall": 0.744
+      },
+      "segments": {
+        "n": 82,
+        "recall": 0.524
+      },
+      "audit_exhibits": {
+        "n": 82,
+        "recall": 0.768
+      },
+      "controls": {
+        "n": 82,
+        "recall": 0.488
+      },
+      "revenue_recognition": {
+        "n": 56,
+        "recall": 0.429
+      },
+      "presentation": {
+        "n": 52,
+        "recall": 0.173
+      },
+      "liquidity": {
+        "n": 42,
+        "recall": 0.167
+      },
+      "geopolitical": {
+        "n": 41,
+        "recall": 0.829
+      },
+      "impairment": {
+        "n": 28,
+        "recall": 0.179
+      },
+      "cybersecurity": {
+        "n": 25,
+        "recall": 0.04
+      },
+      "financial_instruments": {
+        "n": 24,
+        "recall": 0.208
+      },
+      "known_trends": {
+        "n": 22,
+        "recall": 0.045
+      },
+      "mining_reserves": {
+        "n": 21,
+        "recall": 0.952
+      },
+      "income_taxes": {
+        "n": 16,
+        "recall": 0.062
+      },
+      "governance_proxy": {
+        "n": 15,
+        "recall": 0.0
+      },
+      "legal_contingencies": {
+        "n": 14,
+        "recall": 0.0
+      },
+      "risk_factors": {
+        "n": 12,
+        "recall": 0.0
+      },
+      "business_disclosure": {
+        "n": 9,
+        "recall": 0.0
+      },
+      "crypto": {
+        "n": 8,
+        "recall": 0.75
+      },
+      "critical_estimates": {
+        "n": 6,
+        "recall": 0.0
+      },
+      "kpis": {
+        "n": 6,
+        "recall": 0.0
+      }
+    },
+    "cost_usd": 0.0,
+    "mean_secs": 0.0012,
+    "window": [
+      "2024-01-01",
+      "9999"
+    ]
+  },
+  "company_history": {
+    "k": 5,
+    "overall": {
+      "n": 572,
+      "precision": 0.202,
+      "recall": 0.606,
+      "f1": 0.303,
+      "hit_rate": 0.757
+    },
+    "by_year": {
+      "2024": {
+        "n": 572,
+        "precision": 0.202,
+        "recall": 0.606,
+        "f1": 0.303,
+        "hit_rate": 0.757
+      }
+    },
+    "topic_recall": {
+      "non_gaap": {
+        "n": 234,
+        "recall": 0.953
+      },
+      "mdna_drivers": {
+        "n": 125,
+        "recall": 0.744
+      },
+      "segments": {
+        "n": 82,
+        "recall": 0.512
+      },
+      "audit_exhibits": {
+        "n": 82,
+        "recall": 0.756
+      },
+      "controls": {
+        "n": 82,
+        "recall": 0.488
+      },
+      "revenue_recognition": {
+        "n": 56,
+        "recall": 0.411
+      },
+      "presentation": {
+        "n": 52,
+        "recall": 0.192
+      },
+      "liquidity": {
+        "n": 42,
+        "recall": 0.167
+      },
+      "geopolitical": {
+        "n": 41,
+        "recall": 0.854
+      },
+      "impairment": {
+        "n": 28,
+        "recall": 0.214
+      },
+      "cybersecurity": {
+        "n": 25,
+        "recall": 0.12
+      },
+      "financial_instruments": {
+        "n": 24,
+        "recall": 0.208
+      },
+      "known_trends": {
+        "n": 22,
+        "recall": 0.045
+      },
+      "mining_reserves": {
+        "n": 21,
+        "recall": 0.952
+      },
+      "income_taxes": {
+        "n": 16,
+        "recall": 0.062
+      },
+      "governance_proxy": {
+        "n": 15,
+        "recall": 0.0
+      },
+      "legal_contingencies": {
+        "n": 14,
+        "recall": 0.0
+      },
+      "risk_factors": {
+        "n": 12,
+        "recall": 0.0
+      },
+      "business_disclosure": {
+        "n": 9,
+        "recall": 0.0
+      },
+      "crypto": {
+        "n": 8,
+        "recall": 0.625
+      },
+      "critical_estimates": {
+        "n": 6,
+        "recall": 0.0
+      },
+      "kpis": {
+        "n": 6,
+        "recall": 0.167
+      }
+    },
+    "cost_usd": 0.0,
+    "mean_secs": 0.0013,
+    "window": [
+      "2024-01-01",
+      "9999"
+    ]
+  }
+}

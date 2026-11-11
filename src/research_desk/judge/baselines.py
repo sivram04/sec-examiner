@@ -6,17 +6,27 @@ them, it adds nothing.
 from collections import Counter
 
 from .cases import Case
-from .topics import primary_topic
+from .topics import is_follow_up, primary_topic
+
+_TOPICS_BY_LETTER: dict[str, frozenset[str]] = {}
+
+
+def _letter_topics(L: dict) -> frozenset[str]:
+    # labels are deterministic, so each letter is labeled once, not once per evaluated case
+    acc = L["accession"]
+    if acc not in _TOPICS_BY_LETTER:
+        _TOPICS_BY_LETTER[acc] = frozenset(primary_topic(x["section"], x["text"])
+                                           for x in L["comments"]
+                                           if not is_follow_up(x["text"], x["follow_up"]))
+    return _TOPICS_BY_LETTER[acc]
 
 
 def _topic_counts(history: list[dict], where=lambda letter: True) -> Counter:
     c: Counter = Counter()
     for rec in history:
         L = rec["letter"]
-        if not where(L):
-            continue
-        c.update({primary_topic(x["section"], x["text"])
-                  for x in L["comments"] if not x["follow_up"]})
+        if where(L):
+            c.update(_letter_topics(L))
     return c
 
 

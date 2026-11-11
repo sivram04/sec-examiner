@@ -5,7 +5,7 @@ exchange and can't be predicted from the filing alone.
 """
 from dataclasses import asdict, dataclass
 
-from .topics import primary_topic
+from .topics import is_follow_up, primary_topic
 
 
 @dataclass(frozen=True)
@@ -41,13 +41,17 @@ def cases_from(records: list[dict]) -> list[Case]:
     by_filing: dict[str, Case] = {}
     for rec in sorted(records, key=lambda r: r["letter"]["letter_date"]):
         L = rec["letter"]
-        first = [c for c in L["comments"] if not c["follow_up"]]
+        first = [c for c in L["comments"] if not is_follow_up(c["text"], c["follow_up"])]
         if not first or len(rec["targets"]) != 1:
             continue   # ambiguous (several filings in one letter) or nothing new to predict
         t = rec["targets"][0]
         if t["accession"] in by_filing:
             continue
-        topics = tuple(dict.fromkeys(primary_topic(c["section"], c["text"]) for c in first))
+        # "other" is not a finding a company can act on, and flagging it would earn free credit
+        topics = tuple(t for t in dict.fromkeys(primary_topic(c["section"], c["text"])
+                                                for c in first) if t != "other")
+        if not topics:
+            continue
         sections = tuple(dict.fromkeys(c["section"] for c in first if c["section"]))
         by_filing[t["accession"]] = Case(
             t["accession"], L["cik"], L["company"], L["sic"], t["form"], t["filing_date"],

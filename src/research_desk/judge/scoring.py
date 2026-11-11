@@ -3,8 +3,13 @@ from collections import defaultdict
 from statistics import mean
 
 
+def _flags(pred: list[str], k: int) -> list[str]:
+    # "other" is never a valid flag: it isn't actionable and would game the score
+    return [t for t in dict.fromkeys(pred) if t != "other"][:k]
+
+
 def score_case(pred: list[str], gold: tuple[str, ...], k: int) -> dict[str, float]:
-    top = list(dict.fromkeys(pred))[:k]
+    top = _flags(pred, k)
     g = set(gold)
     tp = len(set(top) & g)
     return {
@@ -33,7 +38,7 @@ def aggregate(rows: list[dict], k: int) -> dict:
     # per-topic recall: of the cases where the SEC raised topic T, how often did we flag T
     topic_recall: dict[str, list[float]] = defaultdict(list)
     for r in scored:
-        top = set(list(dict.fromkeys(r["pred"]))[:k])
+        top = set(_flags(r["pred"], k))
         for t in r["case"].gold_topics:
             topic_recall[t].append(float(t in top))
     return {

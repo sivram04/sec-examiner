@@ -56,6 +56,23 @@ def test_score_case():
     assert s == {"precision": pytest.approx(1 / 3), "recall": 0.5, "hit": 1.0}
 
 
+def test_other_earns_no_credit_and_is_not_gold():
+    # predicting "other" first must not use up a slot or score
+    assert score_case(["other", "non_gaap"], ("non_gaap",), k=1)["hit"] == 1.0
+    vague = ("", "Please file the missing schedule.", False)
+    assert cases_from([rec("L1", 1, "2023-05-01", [vague], "F1")]) == []
+
+
+def test_follow_up_phrasings_detected_by_judge():
+    from research_desk.judge.topics import is_follow_up
+
+    for t in ("We have reviewed your responses to comments 5 and 6.",
+              "Please refer to comment 1. We note the closing date…",
+              "Given your response dated June 17, 2022 with respect to prior comments 1, 2"):
+        assert is_follow_up(t)
+    assert not is_follow_up("Please quantify the drivers of revenue growth.")
+
+
 def test_baselines_use_only_given_history():
     old = [rec("L1", 7, "2022-03-01", [TAX], "F0"), rec("L2", 8, "2022-04-01", [NG], "F9")]
     case = cases_from([rec("L3", 7, "2023-05-01", [REV], "F1")])[0]

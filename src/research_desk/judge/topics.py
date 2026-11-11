@@ -13,7 +13,7 @@ TAXONOMY: list[tuple[str, str]] = [
                             r"principal (?:versus|vs\.?|or) agent|gross (?:versus|vs\.?) net")),
     ("segments", r"\bsegment|asc 280|ifrs 8\b|chief operating decision maker|\bcodm\b"),
     ("mdna_drivers", (r"quantif\w+ (?:the )?(?:impact|effect|amount|factors?|drivers?)|"
-                     r"underlying (?:reasons|causes|drivers)|price (?:and|versus) volume|"
+                     r"underlying (?:reasons|causes|drivers)|price (?:and|versus) volume|md&a|restructuring|"
                      r"results of operations")),
     ("known_trends", r"known trends?|known (?:events|uncertaint)|item 303|reasonably likely"),
     ("liquidity", r"liquidity|capital resources|going concern|covenant|cash flows? (?:from|used)"),
@@ -27,17 +27,37 @@ TAXONOMY: list[tuple[str, str]] = [
     ("kpis", (r"key (?:performance|operating) (?:indicator|measure|metric)|\bkpis?\b|"
              r"operating metric")),
     ("geopolitical", (r"\bchina\b|\bprc\b|hong kong|holding foreign companies|russia|ukraine|"
-                     r"sanction|israel|middle east")),
+                     r"sanction|israel|middle east|\bvies?\b|variable interest entit|structure chart")),
     ("crypto", r"crypto|digital asset|bitcoin|blockchain"),
     ("presentation", (r"statements? of cash flows|earnings per share|\beps\b|classif\w+ (?:of|as)|"
                      r"balance sheet|comprehensive income|financial statement presentation")),
     ("audit_exhibits", r"exhibit|certification|auditor|audit report|pcaob|signature"),
     ("governance_proxy", (r"board leadership|lead (?:independent )?director|executive compensation|"
                          r"proxy|pay versus performance")),
-    ("business_disclosure", (r"material (?:agreement|contract)|license agreement|customer "
-                            r"concentration|major customer|backlog|item 101|description of business")),
+    ("business_disclosure", (r"material (?:agreement|contract)|licens\w+ (?:and \w+ )?agreements?|"
+                            r"collaboration agreement|customer concentration|major customer|"
+                            r"backlog|item 101|description of business")),
+    ("financial_instruments", (r"asc 8(?:15|20|25|60)|ifrs 9\b|securitiz|derivative|hedg|"
+                               r"fair value|long-term investments?|equity method|"
+                               r"available[- ]for[- ]sale|held[- ]to[- ]maturity|credit loss|guarantee")),
+    ("mining_reserves", (r"s-k 1300|item 1300|mineral (?:resource|reserve|propert)|"
+                         r"technical report|proved (?:developed|undeveloped)|oil and gas reserves|"
+                         r"reserve (?:estimate|report)|subpart 1200|(?:oil|gas|natural gas) reserves")),
     ("risk_factors", r"risk factor"),
 ]
+
+
+# first-round vs follow-up is a labeling decision, so the judge owns it (not the corpus builder)
+FOLLOW_UP_RE = re.compile(
+    r"we note your response|your responses? (?:to|dated)|in response to (?:our |prior )?comment|"
+    r"(?:we have )?reviewed your responses?|given your response|as previously requested|"
+    r"we re-?issue|prior comments?\s+\d|refer to (?:our )?(?:prior )?comment|"
+    r"in your response|your revised disclosure|we note your revis|comments?\s+\d+(?:\s*(?:,|and)\s*\d+)*\s+(?:from|in) "
+    r"our (?:prior )?letter|(?:file|submit) an amendment .{0,80}agreed", re.IGNORECASE)
+
+
+def is_follow_up(text: str, flagged: bool = False) -> bool:
+    return flagged or bool(FOLLOW_UP_RE.search(text))
 _COMPILED = [(t, re.compile(p)) for t, p in TAXONOMY]
 TOPICS = [t for t, _ in TAXONOMY]
 
