@@ -9,6 +9,8 @@ The judge decides pass/fail; this module only wires the worker to it.
 """
 from pathlib import Path
 
+import httpx
+
 from ..judge.baselines import BASELINES
 from ..judge.cases import cases_from, history_before
 from ..judge.harness import evaluate, gate
@@ -19,8 +21,25 @@ SELECT = ("2024-01-01", "2025-01-01")
 HOLDOUT = ("2025-01-01", "9999")
 
 
-def sections_for(cases, filings_root: Path) -> dict[str, dict]:
-    return {c.case_id: load(filings_root, c.case_id) or {} for c in cases}
+EMBEDS = Path("data/examiner/embeddings")
+
+
+def sections_for(cases, filings_root: Path, embeds_root: Path | None = EMBEDS) -> dict[str, dict]:
+    """Cached filing sections; adds "__emb__" (passage-embedding features) where cached."""
+    out = {c.case_id: load(filings_root, c.case_id) or {} for c in cases}
+    if embeds_root is not None and embeds_root.exists() and any(embeds_root.iterdir()):
+        from .embed import cached, features, topic_matrix
+        from .model import LABELS
+
+        try:
+            topics = topic_matrix(LABELS)
+        except httpx.HTTPError:          # embedding server down: word-count signal only
+            return out
+        for cid, secs in out.items():
+            v = cached(embeds_root, cid)
+            if v is not None:
+                secs["__emb__"] = features(v, topics)
+    return out
 
 
 def grade(ex: Examiner, records: list[dict], sections: dict[str, dict], window, k: int = 5):

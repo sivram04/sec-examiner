@@ -16,6 +16,7 @@ CHUNKS = DATA / "chunks"
 LETTERS = DATA / "examiner" / "letters.jsonl"
 FILINGS = DATA / "examiner" / "filings"
 MODELS = DATA / "examiner" / "models"
+EMBEDS = DATA / "examiner" / "embeddings"
 
 
 def _tickers(arg: str) -> list[str]:
@@ -166,6 +167,7 @@ def main() -> None:
     xb.add_argument("--limit", type=int, help="stop after this many kept letters")
 
     sub.add_parser("examiner-fetch", help="fetch and cache the filings the SEC reviewed")
+    sub.add_parser("examiner-embed", help="embed filings' topic passages with local Ollama")
 
     xi = sub.add_parser("examiner-improve", help="run the self-improvement loop")
     xi.add_argument("--iterations", type=int, default=3)
@@ -435,6 +437,16 @@ def main() -> None:
         cases = cases_from(load_records(LETTERS))
         print(f"{len(cases)} reviewed filings")
         print(fetch_all(EdgarClient(), cases, FILINGS))
+
+    elif a.cmd == "examiner-embed":
+        from .examiner.embed import embed_all
+        from .examiner.filings import load
+        from .judge.cases import cases_from
+        from .judge.harness import load_records
+
+        cases = cases_from(load_records(LETTERS))
+        print(f"{len(cases)} filings to embed")
+        print(embed_all(cases, lambda cid: load(FILINGS, cid), EMBEDS))
 
     elif a.cmd == "examiner-improve":
         from .examiner.improve import Registry, run

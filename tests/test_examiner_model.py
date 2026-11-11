@@ -99,3 +99,35 @@ def test_recipe_space_rejects_out_of_range(bad):
 def test_recipe_roundtrip():
     r = Recipe(c_grid=(1.0,), sections=("7", "8"))
     assert Recipe.from_dict(r.to_dict()) == r
+
+
+def test_embedding_signal_is_learned_when_text_is_uninformative():
+    rng = np.random.default_rng(0)
+    cases, secs = corpus(160, seed=3)
+    for c in cases:                       # same words for everyone; meaning lives in embeddings
+        ng = "non_gaap" in c.gold_topics
+        e = rng.normal(size=16).astype(np.float32)
+        e[0] += 3.0 if ng else -3.0
+        secs[c.case_id] = {"7": "about the business " * 20, "__emb__": e}
+    ex = train("t", cases, secs, lambda c: [], log=quiet,
+               recipe=Recipe(embed_grid=(0.0, 0.5, 1.0), min_df=1))
+    assert ex.embed_share > 0
+    probe = np.zeros(16, np.float32)
+    probe[0] = 3.0
+    assert ex.predict(case(999, "2024-02-01", []), [], {"7": "x", "__emb__": probe})[0] == \
+        "non_gaap"
+
+
+def test_embeddings_off_by_default():
+    cases, secs = corpus(80, seed=4)
+    for c in cases:
+        secs[c.case_id]["__emb__"] = np.ones(8, np.float32)
+    ex = train("t", cases, secs, lambda c: [], log=quiet)
+    assert ex.embed_share == 0.0 and ex.emb_scale is None
+
+
+def test_embed_chunks_pick_topic_passages():
+    from research_desk.examiner.embed import MAX_CHUNKS, chunks
+    body = ("filler text " * 70) * 30 + "goodwill impairment of the reporting unit " * 20
+    picked = chunks({"7": body, "__emb__": "ignored"})
+    assert len(picked) <= MAX_CHUNKS and any("goodwill" in p for p in picked)

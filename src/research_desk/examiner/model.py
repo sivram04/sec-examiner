@@ -38,13 +38,15 @@ class Recipe:
     prior_recent: float = 0.25
     recent_days: int = 365
     val_fraction: float = 0.2
+    # share of the text signal taken from passage embeddings (0 = word counts only); tuned
+    embed_grid: tuple[float, ...] = (0.0,)
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @staticmethod
     def from_dict(d: dict) -> "Recipe":
-        tup = {"sections", "c_grid", "weight_grid"}
+        tup = {"sections", "c_grid", "weight_grid", "embed_grid"}
         return Recipe(**{k: tuple(v) if k in tup else v for k, v in d.items()})
 
 
@@ -63,6 +65,7 @@ RECIPE_SPACE: dict[str, object] = {
     "prior_recent": (0.0, 1.0),
     "recent_days": (60, 1095),
     "val_fraction": (0.1, 0.4),
+    "embed_grid": "1-6 values in [0, 1]",
 }
 
 
@@ -80,6 +83,10 @@ def validate(changes: dict) -> dict:
             if not (isinstance(v, (list, tuple)) and 1 <= len(v) <= 5
                     and all(0.01 <= float(x) <= 30 for x in v)):
                 raise ValueError("c_grid: 1-5 values in [0.01, 30]")
+        elif k == "embed_grid":
+            if not (isinstance(v, (list, tuple)) and 1 <= len(v) <= 6
+                    and all(0 <= float(x) <= 1 for x in v)):
+                raise ValueError("embed_grid: 1-6 values in [0, 1]")
         elif k == "weight_grid":
             if not (isinstance(v, (list, tuple)) and 1 <= len(v) <= 11
                     and all(0 <= float(x) <= 1 for x in v)):
@@ -148,6 +155,9 @@ class Examiner:
     models: dict = field(default_factory=dict)       # label -> LogisticRegression (or None)
     base_rates: dict = field(default_factory=dict)   # label -> training prevalence
     meta: dict = field(default_factory=dict)
+    embed_share: float = 0.0
+    emb_models: dict = field(default_factory=dict)   # label -> LogisticRegression on embeddings
+    emb_scale: tuple | None = None                   # (mean, std) of embedding features
 
     def _vectorizer(self) -> TfidfVectorizer:
         r = self.recipe
@@ -176,6 +186,24 @@ class Examiner:
                         else np.full(X.shape[0], self.base_rates.get(t, 0.0)))
         return np.column_stack(cols)
 
+    def _fit_emb(self, E: np.ndarray, Y: np.ndarray) -> None:
+        mu, sd = E.mean(axis=0), E.std(axis=0) + 1e-6
+        self.emb_scale = (mu, sd)
+        Z = (E - mu) / sd
+        cw = None if self.recipe.class_weight == "none" else "balanced"
+        self.emb_models = {}
+        for j, t in enumerate(LABELS):
+            y = Y[:, j]
+            self.emb_models[t] = None if y.sum() < 5 else                 LogisticRegression(C=0.05, class_weight=cw, max_iter=2000).fit(Z, y)
+
+    def emb_probs(self, E: np.ndarray) -> np.ndarray:
+        if self.emb_scale is None:
+            return np.zeros((len(E), len(LABELS)))
+        Z = (E - self.emb_scale[0]) / self.emb_scale[1]
+        return np.column_stack([m.predict_proba(Z)[:, 1] if (m := self.emb_models.get(t))
+                                is not None else np.full(len(E), self.base_rates.get(t, 0.0))
+                                for t in LABELS])
+
     def text_probs(self, texts: list[str]) -> np.ndarray:
         if self.vectorizer is None:      # no usable text at training time: priors only
             return np.zeros((len(texts), len(LABELS)))
@@ -190,7 +218,11 @@ class Examiner:
 
     def predict(self, case, history: list[dict], sections: dict[str, str] | None) -> list[str]:
         text = filing_text(sections, self.recipe)
-        return self.rank(self.text_probs([text])[0], priors(case, history, self.recipe))
+        tp = self.text_probs([text])[0]
+        if self.embed_share and sections is not None and "__emb__" in sections:
+            ep = self.emb_probs(sections["__emb__"][None, :])[0]
+            tp = (1 - self.embed_share) * tp + self.embed_share * ep
+        return self.rank(tp, priors(case, history, self.recipe))
 
     def save(self, root: Path) -> Path:
         d = root / self.version
@@ -202,6 +234,12 @@ class Examiner:
     @staticmethod
     def load(root: Path, version: str) -> "Examiner":
         return joblib.load(root / version / "model.joblib")
+
+
+def _emb_matrix(cases, sections) -> np.ndarray:
+    rows = [(sections.get(c.case_id) or {}).get("__emb__") for c in cases]
+    dim = next(len(v) for v in rows if v is not None)
+    return np.array([v if v is not None else np.zeros(dim, np.float32) for v in rows])
 
 
 def _labels(cases) -> np.ndarray:
@@ -239,40 +277,65 @@ def train(version: str, train_cases, sections: dict[str, dict], history_of,
     val_priors = [priors(c, history_of(c), r) for c in val]
 
     probe = Examiner("tune", recipe=r)
+    Y_fit, Y_all = _labels(fit), _labels(cases)
+    use_emb = max(r.embed_grid) > 0 and any("__emb__" in (sections.get(c.case_id) or {})
+                                            for c in cases)
     vec = probe._vectorizer()
     try:
         X_fit = vec.fit_transform([texts[c.case_id] for c in fit])  # fitted once, reused per C
+        X_val = vec.transform([texts[c.case_id] for c in val])
     except ValueError:
-        # the recipe selected no usable text (e.g. sections these filings lack): priors only
-        log("no usable filing text for this recipe; falling back to priors only")
-        ex = Examiner(version, recipe=r, weight_text=0.0)
-        ex.meta = {"version": version, "recipe": r.to_dict(), "trained_on": len(cases),
-                   "train_window": [cases[0].filing_date, cases[-1].filing_date],
-                   "val_f1": 0.0, "val_mrr": 0.0, "weight_text": 0.0, "C": None,
-                   "with_text": 0, "train_secs": round(time.time() - t0, 1)}
-        return ex
-    X_val = vec.transform([texts[c.case_id] for c in val])
-    Y_fit = _labels(fit)
-    best = ((-1.0, -1.0), 0.5, 1.0)
-    for C in r.c_grid:
+        # the recipe selected no usable text (e.g. sections these filings lack)
+        X_fit = X_val = None
+        if not use_emb:
+            log("no usable filing text for this recipe; falling back to priors only")
+            ex = Examiner(version, recipe=r, weight_text=0.0)
+            ex.meta = {"version": version, "recipe": r.to_dict(), "trained_on": len(cases),
+                       "train_window": [cases[0].filing_date, cases[-1].filing_date],
+                       "val_f1": 0.0, "val_mrr": 0.0, "weight_text": 0.0, "C": None,
+                       "embed_share": 0.0, "with_text": 0,
+                       "train_secs": round(time.time() - t0, 1)}
+            return ex
+        log("no usable word-count text; using passage embeddings as the text signal")
+    grid_a = r.embed_grid if use_emb else (0.0,)
+    if X_fit is None:
+        grid_a = tuple(x for x in grid_a if x > 0) or (1.0,)
+    if use_emb:
+        E = _emb_matrix(cases, sections)
+        probe._fit_emb(E[:cut], Y_fit)
+        ep_val = probe.emb_probs(E[cut:])
+    best = ((-1.0, -1.0), 0.5, 1.0, 0.0)
+    for C in (r.c_grid if X_fit is not None else (r.c_grid[0],)):
         probe.C = C
-        probe._fit_models(X_fit, Y_fit)
-        tp = probe.probs_from_matrix(X_val)
-        for w in r.weight_grid:
-            probe.weight_text = w
-            s = _tuning_score([probe.rank(tp[i], val_priors[i]) for i in range(len(val))], val)
-            if s > best[0]:
-                best = (s, w, C)
-    (f1, mrr), w, C = best
-    log(f"tuned on {len(val)} validation cases: f1={f1:.3f} mrr={mrr:.3f} weight_text={w} C={C}")
+        if X_fit is not None:
+            probe._fit_models(X_fit, Y_fit)
+            tp0 = probe.probs_from_matrix(X_val)
+        else:
+            tp0 = np.zeros((len(val), len(LABELS)))
+        for a in grid_a:
+            tp = (1 - a) * tp0 + a * ep_val if a else tp0
+            for w in r.weight_grid:
+                probe.weight_text = w
+                s = _tuning_score([probe.rank(tp[i], val_priors[i]) for i in range(len(val))],
+                                  val)
+                if s > best[0]:
+                    best = (s, w, C, a)
+    (f1, mrr), w, C, a = best
+    log(f"tuned on {len(val)} validation cases: f1={f1:.3f} mrr={mrr:.3f} weight_text={w} "
+        f"C={C} embed_share={a}")
 
-    ex = Examiner(version, recipe=r, weight_text=w, C=C)
-    ex.vectorizer = ex._vectorizer()
-    ex._fit_models(ex.vectorizer.fit_transform([texts[c.case_id] for c in cases]),
-                   _labels(cases))
+    ex = Examiner(version, recipe=r, weight_text=w, C=C, embed_share=a)
+    if X_fit is not None:
+        ex.vectorizer = ex._vectorizer()
+        ex._fit_models(ex.vectorizer.fit_transform([texts[c.case_id] for c in cases]), Y_all)
+    else:
+        ex.base_rates = {t: float(Y_all[:, j].mean()) for j, t in enumerate(LABELS)}
+    if a:
+        ex._fit_emb(E, Y_all)
     ex.meta = {"version": version, "recipe": r.to_dict(), "trained_on": len(cases),
                "train_window": [cases[0].filing_date, cases[-1].filing_date],
                "val_f1": round(f1, 3), "val_mrr": round(mrr, 3), "weight_text": w, "C": C,
+               "embed_share": a,
                "with_text": sum(bool(texts[c.case_id]) for c in cases),
                "train_secs": round(time.time() - t0, 1)}
     return ex

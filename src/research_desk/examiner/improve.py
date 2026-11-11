@@ -91,6 +91,8 @@ def diagnose(meta: dict) -> list[dict]:
 
 # rule-based fallback: findings -> recipe changes to try, most promising first
 FALLBACK = [
+    # paraphrase-aware signal for topics word counts miss (needs `desk examiner-embed`)
+    ("weak_topic", {"embed_grid": [0.0, 0.25, 0.5, 0.75]}),
     ("validation_overstates", {"val_fraction": 0.3}),
     ("signal_unused", {"weight_grid": [0.5, 0.6, 0.7, 0.8, 0.9]}),
     ("weak_topic", {"ngram_max": 1, "max_features": 100_000, "min_df": 2}),
