@@ -68,3 +68,16 @@ Selection = filings Jan–Feb 2024 (266 cases, used to choose); holdout = Mar 20
 | v5 | v3 | val_fraction 0.25, min_df 2, max_features 150k | 0.363 | 0.315 | reject (no gain) |
 
 The holdout gain for v3 (+0.027) is larger than the selection gain (+0.007), so the promotion generalised rather than overfitting the selection window. Bigger vocabularies (v4, v5) did not help.
+
+## Expanded corpus and later-year holdout (2026-11-11)
+
+Corpus extended with 2022 and 2025–Oct 2026 letters: 5,107 letters kept, **2,597 reviewed filings** (was 1,387).
+New split: train on letters published before 2024 (1,457 cases), selection = 2024 filings (640), holdout = 2025–26 filings (389, a later year, never used to choose). The 2023–24 registry (v1–v5 above) is archived in `data/examiner/models_2024split/`.
+
+| Version | Change | Selection F1 | Holdout F1 | Decision |
+|---|---|---|---|---|
+| v1 | bootstrap: recipe carried over from old v3 | **0.357** | **0.352** | champion (PASS) |
+| v2 | ngram_max 3, min_df 2, max_features 150k (Gemini) | 0.358 | 0.354 | reject (+0.001) |
+| v3 | ngram_max 3, min_df 2 (Gemini) | 0.356 | 0.353 | reject |
+
+Best baselines: selection 0.312 (company history), holdout 0.318 (recent base rate). The Examiner beats them by +0.045 and +0.034, and selection ≈ holdout, so it generalises to a later year. Recipe tuning has plateaued (vocabulary changes moved F1 by ≤0.002); the next gains need a stronger model, e.g. semantic embeddings for weak topics.
