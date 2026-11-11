@@ -1,17 +1,14 @@
-"""Examiner v1: reads the filing and predicts which topics the SEC staff will raise.
+"""The Examiner: reads a filing and predicts which topics the SEC staff will raise.
 
 score(topic) = w * P(topic | filing text) + (1 - w) * prior(topic | company, industry, recent)
 
-- Text model: TF-IDF over the cached sections, one logistic regression per topic.
-- Priors: shares of past letters raising each topic, computed only from letters public before
-  the filing date (the same point-in-time rule the judge enforces).
-- w and C are chosen on the newest slice of the training data, never on the test window.
-Everything here belongs to the worker: the self-improvement loop may change any of it.
+Every design choice lives in a Recipe. The self-improvement loop changes the Recipe (within
+RECIPE_SPACE), retrains, and lets the sealed judge decide whether the result is better.
 """
 import json
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -25,11 +22,85 @@ from ..judge.topics import TOPICS, is_follow_up, primary_topic
 LABELS = [t for t in TOPICS if t != "other"]
 
 
-def filing_text(sections: dict[str, str] | None) -> str:
+@dataclass(frozen=True)
+class Recipe:
+    sections: tuple[str, ...] = ("1", "1A", "1C", "5", "7", "7A", "8", "9A", "15", "I-1", "I-2",
+                                 "II-1A", "other", "body")
+    max_chars: int = 250_000         # per filing, after section selection
+    ngram_max: int = 2
+    min_df: int = 3
+    max_features: int = 60_000
+    class_weight: str = "balanced"   # or "none"
+    c_grid: tuple[float, ...] = (0.3, 1.0, 3.0)
+    weight_grid: tuple[float, ...] = (0.0, 0.25, 0.4, 0.5, 0.6, 0.75, 1.0)
+    prior_company: float = 0.4
+    prior_industry: float = 0.35
+    prior_recent: float = 0.25
+    recent_days: int = 365
+    val_fraction: float = 0.2
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(d: dict) -> "Recipe":
+        tup = {"sections", "c_grid", "weight_grid"}
+        return Recipe(**{k: tuple(v) if k in tup else v for k, v in d.items()})
+
+
+# what the loop may change, and to what. Anything outside this is rejected before training.
+RECIPE_SPACE: dict[str, object] = {
+    "sections": "subset of the default sections, at least 2",
+    "max_chars": (50_000, 400_000),
+    "ngram_max": (1, 3),
+    "min_df": (2, 20),
+    "max_features": (5_000, 150_000),
+    "class_weight": ("balanced", "none"),
+    "c_grid": "1-5 values in [0.01, 30]",
+    "weight_grid": "1-11 values in [0, 1]",
+    "prior_company": (0.0, 1.0),
+    "prior_industry": (0.0, 1.0),
+    "prior_recent": (0.0, 1.0),
+    "recent_days": (60, 1095),
+    "val_fraction": (0.1, 0.4),
+}
+
+
+def validate(changes: dict) -> dict:
+    """Return the changes if all lie inside RECIPE_SPACE; raise ValueError otherwise."""
+    default = Recipe()
+    for k, v in changes.items():
+        if k not in RECIPE_SPACE:
+            raise ValueError(f"unknown recipe field {k!r}")
+        space = RECIPE_SPACE[k]
+        if k == "sections":
+            if not (isinstance(v, (list, tuple)) and len(v) >= 2 and set(v) <= set(default.sections)):
+                raise ValueError(f"sections must be a subset of {default.sections}")
+        elif k == "c_grid":
+            if not (isinstance(v, (list, tuple)) and 1 <= len(v) <= 5
+                    and all(0.01 <= float(x) <= 30 for x in v)):
+                raise ValueError("c_grid: 1-5 values in [0.01, 30]")
+        elif k == "weight_grid":
+            if not (isinstance(v, (list, tuple)) and 1 <= len(v) <= 11
+                    and all(0 <= float(x) <= 1 for x in v)):
+                raise ValueError("weight_grid: 1-11 values in [0, 1]")
+        elif isinstance(space, tuple) and isinstance(space[0], str):
+            if v not in space:
+                raise ValueError(f"{k} must be one of {space}")
+        else:
+            lo, hi = space
+            if not (isinstance(v, (int, float)) and lo <= v <= hi):
+                raise ValueError(f"{k} must be in [{lo}, {hi}]")
+    return changes
+
+
+def filing_text(sections: dict[str, str] | None, recipe: Recipe | None = None) -> str:
     if not sections:
         return ""
+    r = recipe or Recipe()
+    keep = [(k, v) for k, v in sections.items() if k in r.sections]
     # tag each section so "segment" in MD&A and in the notes are different signals
-    return "\n".join(f"[item {k}] {v}" for k, v in sections.items())
+    return "\n".join(f"[item {k}] {v}" for k, v in keep)[: r.max_chars]
 
 
 def _letter_topics(L: dict) -> set[str]:
@@ -37,10 +108,11 @@ def _letter_topics(L: dict) -> set[str]:
             if not is_follow_up(c["text"], c["follow_up"])} - {"other"}
 
 
-def priors(case, history: list[dict], recent_days: int = 365) -> np.ndarray:
+def priors(case, history: list[dict], recipe: Recipe | None = None) -> np.ndarray:
     """Per-label prior from letters before the filing: company, industry, recent market."""
+    r = recipe or Recipe()
     sic2 = (case.sic or "")[:2]
-    start = (date.fromisoformat(case.filing_date) - timedelta(days=recent_days)).isoformat()
+    start = (date.fromisoformat(case.filing_date) - timedelta(days=r.recent_days)).isoformat()
     groups = {"company": Counter(), "industry": Counter(), "recent": Counter()}
     sizes = Counter()
     for rec in history:
@@ -57,7 +129,8 @@ def priors(case, history: list[dict], recent_days: int = 365) -> np.ndarray:
         if L["letter_date"] >= start:
             groups["recent"].update(ts)
             sizes["recent"] += 1
-    weights = {"company": 0.4, "industry": 0.35, "recent": 0.25}
+    weights = {"company": r.prior_company, "industry": r.prior_industry,
+               "recent": r.prior_recent}
     out = np.zeros(len(LABELS))
     for g, w in weights.items():
         if sizes[g]:
@@ -68,6 +141,7 @@ def priors(case, history: list[dict], recent_days: int = 365) -> np.ndarray:
 @dataclass
 class Examiner:
     version: str
+    recipe: Recipe = field(default_factory=Recipe)
     weight_text: float = 0.5
     C: float = 1.0
     vectorizer: TfidfVectorizer | None = None
@@ -75,30 +149,37 @@ class Examiner:
     base_rates: dict = field(default_factory=dict)   # label -> training prevalence
     meta: dict = field(default_factory=dict)
 
-    def _fit_text(self, texts: list[str], Y: np.ndarray) -> None:
-        self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_df=0.9,
-                                          max_features=60_000, sublinear_tf=True,
-                                          stop_words="english")
-        X = self.vectorizer.fit_transform(texts)
+    def _vectorizer(self) -> TfidfVectorizer:
+        r = self.recipe
+        return TfidfVectorizer(ngram_range=(1, r.ngram_max), min_df=r.min_df, max_df=0.9,
+                               max_features=r.max_features, sublinear_tf=True,
+                               stop_words="english", dtype=np.float32)
+
+    def _fit_models(self, X, Y: np.ndarray) -> None:
         self.models, self.base_rates = {}, {}
+        cw = None if self.recipe.class_weight == "none" else "balanced"
         for j, t in enumerate(LABELS):
             y = Y[:, j]
             self.base_rates[t] = float(y.mean())
             if y.sum() < 5:      # too rare to learn from text: rely on priors
                 self.models[t] = None
                 continue
-            m = LogisticRegression(C=self.C, class_weight="balanced", max_iter=2000)
+            m = LogisticRegression(C=self.C, class_weight=cw, max_iter=2000)
             m.fit(X, y)
             self.models[t] = m
 
-    def text_probs(self, texts: list[str]) -> np.ndarray:
-        X = self.vectorizer.transform(texts)
+    def probs_from_matrix(self, X) -> np.ndarray:
         cols = []
         for t in LABELS:
             m = self.models.get(t)
             cols.append(m.predict_proba(X)[:, 1] if m is not None
                         else np.full(X.shape[0], self.base_rates.get(t, 0.0)))
         return np.column_stack(cols)
+
+    def text_probs(self, texts: list[str]) -> np.ndarray:
+        if self.vectorizer is None:      # no usable text at training time: priors only
+            return np.zeros((len(texts), len(LABELS)))
+        return self.probs_from_matrix(self.vectorizer.transform(texts))
 
     def rank(self, text_p: np.ndarray, prior: np.ndarray) -> list[str]:
         # calibrate the two signals to comparable scales before blending
@@ -107,8 +188,9 @@ class Examiner:
         score = self.weight_text * tp + (1 - self.weight_text) * pr
         return [LABELS[i] for i in np.argsort(-score)]
 
-    def predict(self, case, history: list[dict], text: str) -> list[str]:
-        return self.rank(self.text_probs([text])[0], priors(case, history))
+    def predict(self, case, history: list[dict], sections: dict[str, str] | None) -> list[str]:
+        text = filing_text(sections, self.recipe)
+        return self.rank(self.text_probs([text])[0], priors(case, history, self.recipe))
 
     def save(self, root: Path) -> Path:
         d = root / self.version
@@ -141,33 +223,56 @@ def _tuning_score(preds: list[list[str]], cases) -> tuple[float, float]:
     return f1, float(np.mean(rr)) if rr else 0.0
 
 
-def train(version: str, train_cases, texts: dict[str, str], history_of, log=print) -> Examiner:
-    """Fit on cases whose letters are public before the test window; tune on the newest 20%.
+def train(version: str, train_cases, sections: dict[str, dict], history_of,
+          recipe: Recipe | None = None, log=print) -> Examiner:
+    """Fit on cases whose letters are public before the test window; tune on the newest slice.
 
-    history_of(case) -> letters public before the case's filing date (point-in-time).
+    sections: case_id -> cached filing sections. history_of(case) -> letters public before the
+    case's filing date (point-in-time).
     """
+    r = recipe or Recipe()
     t0 = time.time()
     cases = sorted(train_cases, key=lambda c: c.filing_date)
-    cut = int(len(cases) * 0.8)
+    texts = {c.case_id: filing_text(sections.get(c.case_id), r) for c in cases}
+    cut = int(len(cases) * (1 - r.val_fraction))
     fit, val = cases[:cut], cases[cut:]
-    val_priors = [priors(c, history_of(c)) for c in val]
+    val_priors = [priors(c, history_of(c), r) for c in val]
+
+    probe = Examiner("tune", recipe=r)
+    vec = probe._vectorizer()
+    try:
+        X_fit = vec.fit_transform([texts[c.case_id] for c in fit])  # fitted once, reused per C
+    except ValueError:
+        # the recipe selected no usable text (e.g. sections these filings lack): priors only
+        log("no usable filing text for this recipe; falling back to priors only")
+        ex = Examiner(version, recipe=r, weight_text=0.0)
+        ex.meta = {"version": version, "recipe": r.to_dict(), "trained_on": len(cases),
+                   "train_window": [cases[0].filing_date, cases[-1].filing_date],
+                   "val_f1": 0.0, "val_mrr": 0.0, "weight_text": 0.0, "C": None,
+                   "with_text": 0, "train_secs": round(time.time() - t0, 1)}
+        return ex
+    X_val = vec.transform([texts[c.case_id] for c in val])
+    Y_fit = _labels(fit)
     best = ((-1.0, -1.0), 0.5, 1.0)
-    for C in (0.3, 1.0, 3.0):
-        ex = Examiner("tune", C=C)
-        ex._fit_text([texts.get(c.case_id, "") for c in fit], _labels(fit))
-        tp = ex.text_probs([texts.get(c.case_id, "") for c in val])
-        for w in (0.0, 0.25, 0.4, 0.5, 0.6, 0.75, 1.0):
-            ex.weight_text = w
-            s = _tuning_score([ex.rank(tp[i], val_priors[i]) for i in range(len(val))], val)
+    for C in r.c_grid:
+        probe.C = C
+        probe._fit_models(X_fit, Y_fit)
+        tp = probe.probs_from_matrix(X_val)
+        for w in r.weight_grid:
+            probe.weight_text = w
+            s = _tuning_score([probe.rank(tp[i], val_priors[i]) for i in range(len(val))], val)
             if s > best[0]:
                 best = (s, w, C)
     (f1, mrr), w, C = best
     log(f"tuned on {len(val)} validation cases: f1={f1:.3f} mrr={mrr:.3f} weight_text={w} C={C}")
-    ex = Examiner(version, weight_text=w, C=C)
-    ex._fit_text([texts.get(c.case_id, "") for c in cases], _labels(cases))
-    ex.meta = {"version": version, "trained_on": len(cases),
+
+    ex = Examiner(version, recipe=r, weight_text=w, C=C)
+    ex.vectorizer = ex._vectorizer()
+    ex._fit_models(ex.vectorizer.fit_transform([texts[c.case_id] for c in cases]),
+                   _labels(cases))
+    ex.meta = {"version": version, "recipe": r.to_dict(), "trained_on": len(cases),
                "train_window": [cases[0].filing_date, cases[-1].filing_date],
                "val_f1": round(f1, 3), "val_mrr": round(mrr, 3), "weight_text": w, "C": C,
-               "with_text": sum(bool(texts.get(c.case_id)) for c in cases),
+               "with_text": sum(bool(texts[c.case_id]) for c in cases),
                "train_secs": round(time.time() - t0, 1)}
     return ex

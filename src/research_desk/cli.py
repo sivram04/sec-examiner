@@ -15,6 +15,7 @@ DATA = Path("data")
 CHUNKS = DATA / "chunks"
 LETTERS = DATA / "examiner" / "letters.jsonl"
 FILINGS = DATA / "examiner" / "filings"
+MODELS = DATA / "examiner" / "models"
 
 
 def _tickers(arg: str) -> list[str]:
@@ -166,9 +167,13 @@ def main() -> None:
 
     sub.add_parser("examiner-fetch", help="fetch and cache the filings the SEC reviewed")
 
-    xt = sub.add_parser("examiner-train", help="train a version and grade it with the judge")
-    xt.add_argument("--version", required=True, help="e.g. v1")
-    xt.add_argument("--test-from", default="2024-01-01")
+    xi = sub.add_parser("examiner-improve", help="run the self-improvement loop")
+    xi.add_argument("--iterations", type=int, default=3)
+    xi.add_argument("--max-minutes", type=float, default=120)
+    xi.add_argument("--no-llm", action="store_true", help="rule-based proposals only")
+
+    sub.add_parser("examiner-status", help="champion, lineage and recent attempts")
+    sub.add_parser("examiner-rollback", help="revert to the previous champion")
 
     js = sub.add_parser("judge-seal", help="hash-seal the judge after a deliberate change")
     js.add_argument("--yes", action="store_true", help="confirm: you changed the judge on purpose")
@@ -430,18 +435,40 @@ def main() -> None:
         print(f"{len(cases)} reviewed filings")
         print(fetch_all(EdgarClient(), cases, FILINGS))
 
-    elif a.cmd == "examiner-train":
-        from .examiner.run import train_and_grade
+    elif a.cmd == "examiner-improve":
+        from .examiner.improve import Registry, run
         from .judge.harness import load_records
 
-        meta = train_and_grade(load_records(LETTERS), FILINGS, DATA / "examiner" / "models",
-                               a.version, test_from=a.test_from)
-        o, g = meta["test"]["overall"], meta["gate"]
-        print(f"\n{a.version}: n={o['n']} precision@5={o['precision']:.3f} "
-              f"recall@5={o['recall']:.3f} f1={o['f1']:.3f} hit={o['hit_rate']:.3f} "
-              f"| {meta['test']['mean_secs'] * 1000:.0f} ms/review, ${meta['test']['cost_usd']}")
-        print(f"gate: {'PASS' if g['passed'] else 'FAIL'}  best baseline {g['best_baseline']} "
-              f"f1={g['best_baseline_f1']:.3f}  checks={g['checks']}")
+        llm = None
+        if not a.no_llm and settings.llm_api_key:
+            from .llm import chat
+
+            def llm(system: str, user: str) -> str:
+                return chat([{"role": "system", "content": system},
+                             {"role": "user", "content": user}])
+
+        reg = Registry(MODELS)
+        for e in run(load_records(LETTERS), FILINGS, reg, a.iterations, llm=llm,
+                     max_minutes=a.max_minutes):
+            print(f"  {e.get('version')}: {e['decision']:8} sel_f1={e.get('selection_f1')} "
+                  f"holdout_f1={e.get('holdout_f1')} | {e['reason']}")
+        print("champion:", reg.state()["champion"])
+
+    elif a.cmd == "examiner-status":
+        from .examiner.improve import Registry
+
+        reg = Registry(MODELS)
+        s = reg.state()
+        print("champion:", s["champion"], "| lineage:", " -> ".join(s["lineage"]) or "-")
+        for e in reg.attempts()[-10:]:
+            print(f"  {e['time']} {e.get('version')} from {e.get('parent')}: {e['decision']:8} "
+                  f"sel={e.get('selection_f1')} hold={e.get('holdout_f1')} "
+                  f"{json.dumps(e['changes'])[:80]} | {e['rationale'][:60]}")
+
+    elif a.cmd == "examiner-rollback":
+        from .examiner.improve import Registry
+
+        print("champion now:", Registry(MODELS).rollback())
 
     elif a.cmd == "judge-seal":
         from .judge.harness import seal
