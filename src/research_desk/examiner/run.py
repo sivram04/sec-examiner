@@ -1,11 +1,10 @@
 """Train a versioned Examiner and grade it with the sealed judge.
 
 Two grading windows keep self-improvement honest:
-- selection (filings Jan-Feb 2024, 266 cases): the loop compares candidates here;
-- holdout (filings from Mar 2024, 306 cases): never used to choose anything, only reported,
+- selection (filings in 2024): the loop compares candidates here;
+- holdout (filings from 2025 on): a later year, never used to choose anything, only reported,
   so the final numbers are not inflated by trying many versions.
-Most reviewed filings are annual reports from the Feb-Apr filing season, so the split sits
-inside it. A later-year holdout (letters published in 2025) is the stronger design.
+Training uses only letters published before 2024 (filings from 2021-2023).
 The judge decides pass/fail; this module only wires the worker to it.
 """
 from pathlib import Path
@@ -16,8 +15,8 @@ from ..judge.harness import evaluate, gate
 from .filings import load
 from .model import Examiner, Recipe, train
 
-SELECT = ("2024-01-01", "2024-03-01")
-HOLDOUT = ("2024-03-01", "9999")
+SELECT = ("2024-01-01", "2025-01-01")
+HOLDOUT = ("2025-01-01", "9999")
 
 
 def sections_for(cases, filings_root: Path) -> dict[str, dict]:

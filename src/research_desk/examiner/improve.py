@@ -162,15 +162,17 @@ def llm_propose(findings, recipe: Recipe, meta: dict, attempts: list[dict], pare
 
 
 def step(records: list[dict], filings_root: Path, reg: Registry,
-         llm: Callable[[str, str], str] | None = None, log=print) -> dict:
-    """One improvement attempt. Bootstraps a champion from the default recipe if none exists."""
+         llm: Callable[[str, str], str] | None = None, log=print,
+         seed: tuple[Recipe, str] | None = None) -> dict:
+    """One improvement attempt. Bootstraps a champion (default or seed recipe) if none exists."""
     state = reg.state()
     if state["champion"] is None:
         v = reg.next_version()
-        meta = train_and_grade(records, filings_root, reg.root, v, Recipe(), log=log)
+        recipe, why = seed or (Recipe(), "default recipe")
+        meta = train_and_grade(records, filings_root, reg.root, v, recipe, log=log)
         passed = meta["selection_gate"]["passed"]
         entry = {"attempt": True, "version": v, "parent": None, "changes": {},
-                 "rationale": "bootstrap: default recipe", "findings": [],
+                 "rationale": f"bootstrap: {why}", "findings": [],
                  "selection_f1": meta["selection"]["overall"]["f1"],
                  "holdout_f1": meta["holdout"]["overall"]["f1"],
                  "decision": "promote" if passed else "reject",
@@ -233,14 +235,14 @@ def step(records: list[dict], filings_root: Path, reg: Registry,
 
 
 def run(records, filings_root: Path, reg: Registry, iterations: int, llm=None,
-        max_minutes: float = 120, log=print) -> list[dict]:
+        max_minutes: float = 120, log=print, seed=None) -> list[dict]:
     """Up to `iterations` attempts within a time budget; stops early when nothing is left."""
     out, t0 = [], time.time()
     for _ in range(iterations):
         if (time.time() - t0) / 60 > max_minutes:
             log("time budget reached")
             break
-        e = step(records, filings_root, reg, llm, log)
+        e = step(records, filings_root, reg, llm, log, seed=seed)
         out.append(e)
         if e["decision"] == "stop":
             break

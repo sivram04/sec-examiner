@@ -171,6 +171,7 @@ def main() -> None:
     xi.add_argument("--iterations", type=int, default=3)
     xi.add_argument("--max-minutes", type=float, default=120)
     xi.add_argument("--no-llm", action="store_true", help="rule-based proposals only")
+    xi.add_argument("--seed", type=Path, help="meta.json whose recipe bootstraps a new registry")
 
     sub.add_parser("examiner-status", help="champion, lineage and recent attempts")
     sub.add_parser("examiner-rollback", help="revert to the previous champion")
@@ -447,9 +448,15 @@ def main() -> None:
                 return chat([{"role": "system", "content": system},
                              {"role": "user", "content": user}])
 
+        seed = None
+        if a.seed:
+            from .examiner.model import Recipe
+
+            m = json.loads(a.seed.read_text(encoding="utf-8"))
+            seed = (Recipe.from_dict(m["recipe"]), f"recipe carried over from {a.seed}")
         reg = Registry(MODELS)
         for e in run(load_records(LETTERS), FILINGS, reg, a.iterations, llm=llm,
-                     max_minutes=a.max_minutes):
+                     max_minutes=a.max_minutes, seed=seed):
             print(f"  {e.get('version')}: {e['decision']:8} sel_f1={e.get('selection_f1')} "
                   f"holdout_f1={e.get('holdout_f1')} | {e['reason']}")
         print("champion:", reg.state()["champion"])

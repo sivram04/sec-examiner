@@ -103,3 +103,11 @@ def test_rollback(reg):
 def test_rule_proposer_exhausts():
     attempts = [{"parent": "v1", "changes": c} for _, c in improve.FALLBACK]
     assert rule_propose([{"kind": "weak_topic"}], attempts, "v1")[0] == {}
+
+
+def test_bootstrap_from_seed_recipe(reg):
+    from research_desk.examiner.model import Recipe
+    reg.scores += [(0.34, True)]
+    e = step([], None, reg, log=quiet, seed=(Recipe(min_df=5), "carried over"))
+    assert e["rationale"] == "bootstrap: carried over"
+    assert reg.meta("v1")["recipe"]["min_df"] == 5
