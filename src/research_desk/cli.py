@@ -13,6 +13,7 @@ from .edgar.parser import parse_sections
 
 DATA = Path("data")
 CHUNKS = DATA / "chunks"
+LETTERS = DATA / "examiner" / "letters.jsonl"
 
 
 def _tickers(arg: str) -> list[str]:
@@ -156,6 +157,19 @@ def main() -> None:
     rs.add_argument("--user", default="default")
     rs.add_argument("--auto", action="store_true", help="skip human-in-the-loop checkpoints")
     rs.add_argument("--out", help="write the Markdown note here")
+
+    xb = sub.add_parser("examiner-build", help="build the SEC comment-letter corpus")
+    xb.add_argument("--start", type=date.fromisoformat, default=date(2023, 1, 1))
+    xb.add_argument("--end", type=date.fromisoformat, default=date(2024, 12, 31))
+    xb.add_argument("--limit", type=int, help="stop after this many kept letters")
+
+    js = sub.add_parser("judge-seal", help="hash-seal the judge after a deliberate change")
+    js.add_argument("--yes", action="store_true", help="confirm: you changed the judge on purpose")
+
+    jb = sub.add_parser("judge-baselines", help="score the baselines a system must beat")
+    jb.add_argument("--test-from", default="2024-01-01")
+    jb.add_argument("-k", type=int, default=5)
+    jb.add_argument("--out", default="evals/results/judge_baselines.json")
 
     e = sub.add_parser("eval-retrieval", help="compare retrieval methods on the golden set")
     e.add_argument("--golden", default="evals/retrieval_golden.jsonl")
@@ -393,6 +407,36 @@ def main() -> None:
         print("\n" + out["report"])
         if a.out:
             Path(a.out).write_text(out["report"], encoding="utf-8")
+
+    elif a.cmd == "examiner-build":
+        from .examiner.corpus import build
+
+        stats = build(EdgarClient(), a.start, a.end, LETTERS, limit=a.limit)
+        print(stats)
+
+    elif a.cmd == "judge-seal":
+        from .judge.harness import seal
+
+        if not a.yes:
+            raise SystemExit("Refusing: sealing accepts the current judge as the new yardstick. "
+                             "Re-run with --yes only after a deliberate, reviewed judge change.")
+        for name, h in seal().items():
+            print(f"{h[:12]}  {name}")
+
+    elif a.cmd == "judge-baselines":
+        from .judge.baselines import BASELINES
+        from .judge.harness import evaluate, load_records
+
+        records = load_records(LETTERS)
+        results = {}
+        for name, fn in BASELINES.items():
+            rep = evaluate(fn, records, test_from=a.test_from, k=a.k)
+            results[name] = rep
+            o = rep["overall"]
+            print(f"{name:18} n={o['n']:5} precision@{a.k}={o['precision']:.3f} "
+                  f"recall@{a.k}={o['recall']:.3f} f1={o['f1']:.3f} hit={o['hit_rate']:.3f}")
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out).write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
 
     elif a.cmd == "eval-retrieval":
         from .retrieval.evaluate import evaluate, load_golden, to_markdown

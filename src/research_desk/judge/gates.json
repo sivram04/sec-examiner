@@ -1,0 +1,6 @@
+{
+  "min_cases": 100,
+  "min_f1_margin": 0.02,
+  "max_mean_secs": 60,
+  "max_cost_usd_per_case": 0.05
+}

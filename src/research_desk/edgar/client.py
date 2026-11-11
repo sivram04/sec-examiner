@@ -73,8 +73,14 @@ class EdgarClient:
         """Filings newest first. With since, older submission pages are fetched as needed:
         'recent' holds only the last ~1000 filings, which busy filers exhaust within months.
         """
+        return self.filings_cik((self.cik(ticker), *PREDECESSORS.get(ticker.upper(), ())),
+                                forms, as_of, since)
+
+    def filings_cik(self, ciks, forms: set[str] | None = None, as_of: date | None = None,
+                    since: date | None = None) -> list[Filing]:
+        """Same as filings(), by company ID: SEC-reviewed filers often have no ticker."""
         out: list[Filing] = []
-        for cik in (self.cik(ticker), *PREDECESSORS.get(ticker.upper(), ())):
+        for cik in ciks:
             subs = self.http.get(SUBMISSIONS_URL.format(cik=cik)).raise_for_status().json()
             out += parse_filings(cik, subs, forms, as_of)
             if since:
