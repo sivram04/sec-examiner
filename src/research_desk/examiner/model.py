@@ -18,6 +18,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 
 from ..judge.topics import TOPICS, is_follow_up, primary_topic
+from .gaps import N_FEATURES as N_GAP
+from .gaps import gap_features
 
 LABELS = [t for t in TOPICS if t != "other"]
 
@@ -40,6 +42,7 @@ class Recipe:
     val_fraction: float = 0.2
     # share of the text signal taken from passage embeddings (0 = word counts only); tuned
     embed_grid: tuple[float, ...] = (0.0,)
+    gaps: bool = False               # add disclosure-gap features (examiner/gaps.py)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -66,6 +69,7 @@ RECIPE_SPACE: dict[str, object] = {
     "recent_days": (60, 1095),
     "val_fraction": (0.1, 0.4),
     "embed_grid": "1-6 values in [0, 1]",
+    "gaps": (False, True),
 }
 
 
@@ -91,6 +95,9 @@ def validate(changes: dict) -> dict:
             if not (isinstance(v, (list, tuple)) and 1 <= len(v) <= 11
                     and all(0 <= float(x) <= 1 for x in v)):
                 raise ValueError("weight_grid: 1-11 values in [0, 1]")
+        elif k == "gaps":
+            if not isinstance(v, bool):
+                raise ValueError("gaps must be true or false")
         elif isinstance(space, tuple) and isinstance(space[0], str):
             if v not in space:
                 raise ValueError(f"{k} must be one of {space}")
@@ -204,10 +211,11 @@ class Examiner:
                                 is not None else np.full(len(E), self.base_rates.get(t, 0.0))
                                 for t in LABELS])
 
-    def text_probs(self, texts: list[str]) -> np.ndarray:
+    def text_probs(self, texts: list[str], gap_rows: np.ndarray | None = None) -> np.ndarray:
         if self.vectorizer is None:      # no usable text at training time: priors only
             return np.zeros((len(texts), len(LABELS)))
-        return self.probs_from_matrix(self.vectorizer.transform(texts))
+        return self.probs_from_matrix(_with_gaps(self.vectorizer.transform(texts), gap_rows,
+                                                 self.recipe))
 
     def rank(self, text_p: np.ndarray, prior: np.ndarray) -> list[str]:
         # calibrate the two signals to comparable scales before blending
@@ -218,7 +226,8 @@ class Examiner:
 
     def predict(self, case, history: list[dict], sections: dict[str, str] | None) -> list[str]:
         text = filing_text(sections, self.recipe)
-        tp = self.text_probs([text])[0]
+        g = gap_features(sections)[None, :] if self.recipe.gaps else None
+        tp = self.text_probs([text], g)[0]
         if self.embed_share and sections is not None and "__emb__" in sections:
             ep = self.emb_probs(sections["__emb__"][None, :])[0]
             tp = (1 - self.embed_share) * tp + self.embed_share * ep
@@ -234,6 +243,15 @@ class Examiner:
     @staticmethod
     def load(root: Path, version: str) -> "Examiner":
         return joblib.load(root / version / "model.joblib")
+
+
+def _with_gaps(X, gap_rows, recipe: Recipe):
+    if not recipe.gaps:
+        return X
+    from scipy.sparse import csr_matrix, hstack
+
+    G = gap_rows if gap_rows is not None else np.zeros((X.shape[0], N_GAP), np.float32)
+    return hstack([X, csr_matrix(G)], format="csr")
 
 
 def _emb_matrix(cases, sections) -> np.ndarray:
@@ -280,10 +298,14 @@ def train(version: str, train_cases, sections: dict[str, dict], history_of,
     Y_fit, Y_all = _labels(fit), _labels(cases)
     use_emb = max(r.embed_grid) > 0 and any("__emb__" in (sections.get(c.case_id) or {})
                                             for c in cases)
+    G = (np.array([gap_features(sections.get(c.case_id)) for c in cases])
+         if r.gaps else None)
     vec = probe._vectorizer()
     try:
-        X_fit = vec.fit_transform([texts[c.case_id] for c in fit])  # fitted once, reused per C
-        X_val = vec.transform([texts[c.case_id] for c in val])
+        X_fit = _with_gaps(vec.fit_transform([texts[c.case_id] for c in fit]),
+                           None if G is None else G[:cut], r)   # fitted once, reused per C
+        X_val = _with_gaps(vec.transform([texts[c.case_id] for c in val]),
+                           None if G is None else G[cut:], r)
     except ValueError:
         # the recipe selected no usable text (e.g. sections these filings lack)
         X_fit = X_val = None
@@ -327,7 +349,8 @@ def train(version: str, train_cases, sections: dict[str, dict], history_of,
     ex = Examiner(version, recipe=r, weight_text=w, C=C, embed_share=a)
     if X_fit is not None:
         ex.vectorizer = ex._vectorizer()
-        ex._fit_models(ex.vectorizer.fit_transform([texts[c.case_id] for c in cases]), Y_all)
+        ex._fit_models(_with_gaps(ex.vectorizer.fit_transform([texts[c.case_id] for c in cases]),
+                                  G, r), Y_all)
     else:
         ex.base_rates = {t: float(Y_all[:, j].mean()) for j, t in enumerate(LABELS)}
     if a:

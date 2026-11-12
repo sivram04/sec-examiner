@@ -131,3 +131,27 @@ def test_embed_chunks_pick_topic_passages():
     body = ("filler text " * 70) * 30 + "goodwill impairment of the reporting unit " * 20
     picked = chunks({"7": body, "__emb__": "ignored"})
     assert len(picked) <= MAX_CHUNKS and any("goodwill" in p for p in picked)
+
+
+def test_gap_features_flag_missing_disclosures():
+    from research_desk.examiner.gaps import TOPICS as GT
+    from research_desk.examiner.gaps import gap_features, gaps_report
+    thin = {"7": "we have goodwill on the balance sheet. " * 5}
+    full = {"7": "goodwill is tested for each reporting unit; the fair value of each reporting "
+                 "unit exceeded its carrying value by 20%. discount rates were 9%. we performed "
+                 "a quantitative impairment test."}
+    i = GT.index("impairment")
+    assert gap_features(thin)[4 * i + 3] == 1.0 and gap_features(full)[4 * i + 3] == 0.0
+    assert "impairment" in gaps_report(thin) and gap_features({})[4 * i] == 0.0
+
+
+def test_gaps_recipe_trains_and_predicts():
+    cases, secs = corpus(100, seed=5)
+    for c in cases:                       # gap signal: non-GAAP filings lack a reconciliation
+        if "non_gaap" in c.gold_topics:
+            secs[c.case_id]["7"] += " adjusted ebitda adjusted ebitda"
+    ex = train("t", cases, secs, lambda c: [], log=quiet, recipe=Recipe(gaps=True))
+    assert len(ex.predict(case(1, "2024-02-01", []), [], {"7": NG_TEXT})) == len(LABELS)
+    assert ex.recipe.gaps and validate({"gaps": True}) == {"gaps": True}
+    with pytest.raises(ValueError):
+        validate({"gaps": "yes"})
