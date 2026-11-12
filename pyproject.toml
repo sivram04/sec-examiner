@@ -37,5 +37,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# the sealed judge's manifest and gates must ship with the code, or verify() fails when installed
+research_desk = ["judge/*.json", "web/*"]
+
 [tool.ruff]
 line-length = 100
