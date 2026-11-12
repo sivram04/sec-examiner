@@ -26,6 +26,7 @@ dev = ["pytest>=8", "ruff==0.17.3"]
 
 [project.scripts]
 desk = "research_desk.cli:main"
+sec-examiner-mcp = "research_desk.examiner.mcp_server:main"
 
 [build-system]
 requires = ["setuptools>=68"]

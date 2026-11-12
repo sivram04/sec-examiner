@@ -1,8 +1,14 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# the project's .env, found from this file so tools launched elsewhere (MCP clients) still get it;
+# a .env in the working directory, if any, takes precedence
+PROJECT_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(PROJECT_ENV, ".env"), extra="ignore")
 
     sec_user_agent: str = "ai-research-desk contact@example.com"
     llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
