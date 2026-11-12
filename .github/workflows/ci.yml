@@ -28,6 +28,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
       - run: npx eslint src && npx tsc --noEmit
       - run: STATIC_EXPORT=1 NEXT_PUBLIC_API_URL="" npm run build

@@ -5,7 +5,8 @@
 FROM node:22-slim AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# npm install, not ci: the lockfile is written on Windows and npm omits Linux-only optional deps
+RUN npm install --no-audit --no-fund
 COPY frontend/ ./
 RUN STATIC_EXPORT=1 NEXT_PUBLIC_API_URL="" npm run build
 

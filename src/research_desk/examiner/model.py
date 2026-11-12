@@ -6,6 +6,7 @@ Every design choice lives in a Recipe. The self-improvement loop changes the Rec
 RECIPE_SPACE), retrains, and lets the sealed judge decide whether the result is better.
 """
 import json
+import re
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass, field
@@ -43,6 +44,7 @@ class Recipe:
     # share of the text signal taken from passage embeddings (0 = word counts only); tuned
     embed_grid: tuple[float, ...] = (0.0,)
     gaps: bool = False               # add disclosure-gap features (examiner/gaps.py)
+    plugin: str = ""                 # id of a generated, sandboxed feature plugin (plugins.py)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -70,6 +72,7 @@ RECIPE_SPACE: dict[str, object] = {
     "val_fraction": (0.1, 0.4),
     "embed_grid": "1-6 values in [0, 1]",
     "gaps": (False, True),
+    "plugin": "id of a generated feature plugin (p + 10 hex), or empty",
 }
 
 
@@ -95,6 +98,9 @@ def validate(changes: dict) -> dict:
             if not (isinstance(v, (list, tuple)) and 1 <= len(v) <= 11
                     and all(0 <= float(x) <= 1 for x in v)):
                 raise ValueError("weight_grid: 1-11 values in [0, 1]")
+        elif k == "plugin":
+            if not (isinstance(v, str) and (v == "" or re.fullmatch(r"p[0-9a-f]{10}", v))):
+                raise ValueError("plugin must be empty or a plugin id like p0123456789")
         elif k == "gaps":
             if not isinstance(v, bool):
                 raise ValueError("gaps must be true or false")
@@ -175,6 +181,18 @@ class Examiner:
     embed_share: float = 0.0
     emb_models: dict = field(default_factory=dict)   # label -> LogisticRegression on embeddings
     emb_scale: tuple | None = None                   # (mean, std) of embedding features
+    plugin_code: str = ""                            # the judge-approved generated code
+    plugin_keys: list = field(default_factory=list)
+    plugin_scale: tuple | None = None                # (mean, std) of plugin features
+
+    def plugin_row(self, sections: dict | None) -> np.ndarray:
+        raw = (sections or {}).get("__plugin__")
+        if raw is None:
+            from .plugins import fn_for, vector
+
+            raw = vector(fn_for(self.plugin_code), self.plugin_keys, sections)
+        mu, sd = self.plugin_scale
+        return ((np.asarray(raw, np.float32) - mu) / sd)[None, :]
 
     def _vectorizer(self) -> TfidfVectorizer:
         r = self.recipe
@@ -221,11 +239,12 @@ class Examiner:
                                 is not None else np.full(len(E), self.base_rates.get(t, 0.0))
                                 for t in LABELS])
 
-    def text_probs(self, texts: list[str], gap_rows: np.ndarray | None = None) -> np.ndarray:
+    def text_probs(self, texts: list[str], gap_rows: np.ndarray | None = None,
+                   plugin_rows: np.ndarray | None = None) -> np.ndarray:
         if self.vectorizer is None:      # no usable text at training time: priors only
             return np.zeros((len(texts), len(LABELS)))
         return self.probs_from_matrix(_with_gaps(self.vectorizer.transform(texts), gap_rows,
-                                                 self.recipe))
+                                                 self.recipe, plugin_rows))
 
     def rank(self, text_p: np.ndarray, prior: np.ndarray) -> list[str]:
         # calibrate the two signals to comparable scales before blending
@@ -238,7 +257,8 @@ class Examiner:
         """(text signal, prior signal) per label, before blending."""
         text = filing_text(sections, self.recipe)
         g = gap_features(sections)[None, :] if self.recipe.gaps else None
-        tp = self.text_probs([text], g)[0]
+        pl = self.plugin_row(sections) if self.recipe.plugin else None
+        tp = self.text_probs([text], g, pl)[0]
         if self.embed_share and sections is not None and "__emb__" in sections:
             ep = self.emb_probs(sections["__emb__"][None, :])[0]
             tp = (1 - self.embed_share) * tp + self.embed_share * ep
@@ -270,13 +290,19 @@ class Examiner:
         return joblib.load(root / version / "model.joblib")
 
 
-def _with_gaps(X, gap_rows, recipe: Recipe):
-    if not recipe.gaps:
+def _with_gaps(X, gap_rows, recipe: Recipe, plugin_rows=None):
+    """Append gap and plugin feature columns (when the recipe enables them) to the text matrix."""
+    if not recipe.gaps and not recipe.plugin:
         return X
     from scipy.sparse import csr_matrix, hstack
 
-    G = gap_rows if gap_rows is not None else np.zeros((X.shape[0], N_GAP), np.float32)
-    return hstack([X, csr_matrix(G)], format="csr")
+    parts = [X]
+    if recipe.gaps:
+        parts.append(csr_matrix(gap_rows if gap_rows is not None
+                                else np.zeros((X.shape[0], N_GAP), np.float32)))
+    if recipe.plugin and plugin_rows is not None:
+        parts.append(csr_matrix(plugin_rows))
+    return hstack(parts, format="csr")
 
 
 def _emb_matrix(cases, sections) -> np.ndarray:
@@ -325,12 +351,20 @@ def train(version: str, train_cases, sections: dict[str, dict], history_of,
                                             for c in cases)
     G = (np.array([gap_features(sections.get(c.case_id)) for c in cases])
          if r.gaps else None)
+    P, p_scale = None, None
+    if r.plugin:
+        rows = [(sections.get(c.case_id) or {}).get("__plugin__") for c in cases]
+        dim = next((len(v) for v in rows if v is not None), 0)
+        raw = np.array([v if v is not None else np.zeros(dim) for v in rows], np.float32)
+        mu, sd = raw.mean(axis=0), raw.std(axis=0) + 1e-6
+        P, p_scale = (raw - mu) / sd, (mu, sd)
     vec = probe._vectorizer()
     try:
         X_fit = _with_gaps(vec.fit_transform([texts[c.case_id] for c in fit]),
-                           None if G is None else G[:cut], r)   # fitted once, reused per C
+                           None if G is None else G[:cut], r,
+                           None if P is None else P[:cut])      # fitted once, reused per C
         X_val = _with_gaps(vec.transform([texts[c.case_id] for c in val]),
-                           None if G is None else G[cut:], r)
+                           None if G is None else G[cut:], r, None if P is None else P[cut:])
     except ValueError:
         # the recipe selected no usable text (e.g. sections these filings lack)
         X_fit = X_val = None
@@ -375,9 +409,10 @@ def train(version: str, train_cases, sections: dict[str, dict], history_of,
     if X_fit is not None:
         ex.vectorizer = ex._vectorizer()
         ex._fit_models(_with_gaps(ex.vectorizer.fit_transform([texts[c.case_id] for c in cases]),
-                                  G, r), Y_all)
+                                  G, r, P), Y_all)
     else:
         ex.base_rates = {t: float(Y_all[:, j].mean()) for j, t in enumerate(LABELS)}
+    ex.plugin_scale = p_scale
     if a:
         ex._fit_emb(E, Y_all)
     ex.meta = {"version": version, "recipe": r.to_dict(), "trained_on": len(cases),
