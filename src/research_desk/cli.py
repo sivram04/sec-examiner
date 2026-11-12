@@ -174,6 +174,8 @@ def main() -> None:
     xi.add_argument("--max-minutes", type=float, default=120)
     xi.add_argument("--no-llm", action="store_true", help="rule-based proposals only")
     xi.add_argument("--seed", type=Path, help="meta.json whose recipe bootstraps a new registry")
+    xi.add_argument("--code", action="store_true",
+                    help="let the LLM write a feature plugin (validated, sandboxed, judged)")
 
     sub.add_parser("examiner-status", help="champion, lineage and recent attempts")
     sub.add_parser("examiner-rollback", help="revert to the previous champion")
@@ -466,6 +468,19 @@ def main() -> None:
 
             m = json.loads(a.seed.read_text(encoding="utf-8"))
             seed = (Recipe.from_dict(m["recipe"]), f"recipe carried over from {a.seed}")
+        reg = Registry(MODELS)
+        if a.code:
+            from .examiner.improve import code_step
+
+            if llm is None:
+                raise SystemExit("--code needs LLM_API_KEY in .env (the LLM writes the code)")
+            records = load_records(LETTERS)
+            for _ in range(a.iterations):
+                e = code_step(records, FILINGS, reg, llm)
+                print(f"  {e.get('version')}: {e['decision']:8} sel_f1={e.get('selection_f1')} "
+                      f"holdout_f1={e.get('holdout_f1')} | {e['reason']}")
+            print("champion:", reg.state()["champion"])
+            return
         reg = Registry(MODELS)
         for e in run(load_records(LETTERS), FILINGS, reg, a.iterations, llm=llm,
                      max_minutes=a.max_minutes, seed=seed):

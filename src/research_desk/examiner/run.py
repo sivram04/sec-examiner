@@ -10,12 +10,14 @@ The judge decides pass/fail; this module only wires the worker to it.
 from pathlib import Path
 
 import httpx
+import numpy as np
 
 from ..judge.baselines import BASELINES
 from ..judge.cases import cases_from, history_before
 from ..judge.harness import evaluate, gate
 from .filings import load
 from .model import Examiner, Recipe, train
+from .plugins import cached
 
 SELECT = ("2024-01-01", "2025-01-01")
 HOLDOUT = ("2025-01-01", "9999")
@@ -60,9 +62,16 @@ def train_and_grade(records: list[dict], filings_root: Path, models_root: Path, 
     train_records = [r for r in records if r["letter"]["letter_date"] < test_from]
     train_cases = [c for c in cases_from(train_records) if c.filing_date < test_from]
     sections = sections_for(cases_from(records), filings_root)
+    code, keys = "", []
+    if recipe is not None and recipe.plugin:
+        # features the sandbox computed for this generated plugin (plugins.extract)
+        code, keys, feats = cached(models_root.parent / "plugins", recipe.plugin)
+        for cid, secs in sections.items():
+            secs["__plugin__"] = np.asarray(feats.get(cid) or [0.0] * len(keys), np.float32)
     log(f"{version}: training on {len(train_cases)} cases")
     ex = train(version, train_cases, sections,
                lambda c: history_before(train_records, c.filing_date), recipe=recipe, log=log)
+    ex.plugin_code, ex.plugin_keys = code, keys
     sel, sel_base, sel_gate = grade(ex, records, sections, select)
     hold, hold_base, _ = grade(ex, records, sections, holdout)
     ex.meta.update({

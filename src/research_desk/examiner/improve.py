@@ -206,16 +206,24 @@ def step(records: list[dict], filings_root: Path, reg: Registry,
         reg.log(entry)
         return entry
 
-    v = reg.next_version()
     cand = Recipe.from_dict({**recipe.to_dict(), **changes})
+    return _evaluate(records, filings_root, reg, parent, pmeta, cand, changes, why, findings, log)
+
+
+def _evaluate(records, filings_root: Path, reg: Registry, parent: str, pmeta: dict,
+              cand: Recipe, changes: dict, why: str, findings: list, log=print,
+              extra: dict | None = None) -> dict:
+    """Train a candidate, let the judge grade it, promote only if it passes and beats the parent."""
+    v = reg.next_version()
     log(f"{v}: from {parent}, trying {changes} ({why})")
     t0 = time.time()
+    base = {"attempt": True, "version": v, "parent": parent, "changes": changes,
+            "rationale": why, "findings": findings, **(extra or {})}
     try:
         meta = train_and_grade(records, filings_root, reg.root, v, cand, log=log)
     except Exception as e:  # noqa: BLE001 - a crashing candidate is a rejected candidate
-        entry = {"attempt": True, "version": v, "parent": parent, "changes": changes,
-                 "rationale": why, "findings": findings, "decision": "reject",
-                 "reason": f"crashed: {e!r}"[:300], "secs": round(time.time() - t0, 1)}
+        entry = {**base, "decision": "reject", "reason": f"crashed: {e!r}"[:300],
+                 "secs": round(time.time() - t0, 1)}
         reg.log(entry)
         return entry
 
@@ -227,15 +235,100 @@ def step(records: list[dict], filings_root: Path, reg: Registry,
     reason = ("passes the judge and beats the champion" if decision == "promote" else
               "fails the judge gate" if not passed else
               f"no gain over champion ({sel_f1:.3f} vs {champ_f1:.3f}, need +{MIN_GAIN})")
-    entry = {"attempt": True, "version": v, "parent": parent, "changes": changes,
-             "rationale": why, "findings": findings, "selection_f1": sel_f1,
-             "champion_f1": champ_f1, "holdout_f1": meta["holdout"]["overall"]["f1"],
+    entry = {**base, "selection_f1": sel_f1, "champion_f1": champ_f1,
+             "holdout_f1": meta["holdout"]["overall"]["f1"],
              "decision": decision, "reason": reason, "secs": round(time.time() - t0, 1)}
     reg.log(entry)
     if decision == "promote":
         reg.set_champion(v)
     log(f"{v}: {decision} ({reason})")
     return entry
+
+
+CODE_PROMPT = """You improve a machine-learning system that predicts which topics SEC staff will raise
+in comment letters on a company's 10-K, 10-Q or 20-F. It already uses word counts (TF-IDF) and
+the SEC's past letters. Write ONE new Python function that extracts extra numeric features from
+a filing's text, aimed at the topics it currently misses:
+
+{weak}
+
+What staff usually expect with those topics (absence of these often triggers a comment):
+{expected}
+
+Plugins already tried for this champion (do not repeat their idea):
+{tried}
+
+Rules (code that breaks any rule is discarded before it runs):
+- Exactly: def features(text: str) -> dict[str, float]. `text` is the whole filing, lowercased,
+  up to 400,000 characters. Return at most 16 numeric features with short snake_case names.
+- Only `import re` and `import math` are allowed. No files, network, eval/exec, getattr,
+  str.format, dunder or underscore attributes, classes, or global state.
+- Must be fast (well under 1 second per filing) and deterministic.
+- Prefer features that capture what is MISSING or unusually thin (e.g. a topic is discussed but
+  its expected disclosure is absent), normalised by text length.
+
+Reply with one ```python code block containing only the function (and its imports), then one
+line starting with RATIONALE: explaining the idea in one sentence."""
+
+
+def code_propose(pmeta: dict, attempts: list[dict], parent: str, llm) -> tuple[str, str]:
+    """Ask the LLM for a feature plugin; return (code, rationale)."""
+    import re as _re
+
+    from .gaps import NAMES
+
+    recall = pmeta.get("selection", {}).get("topic_recall", {})
+    weak = sorted(((t, v) for t, v in recall.items() if v.get("n", 0) >= 10
+                   and v.get("recall", 1) < 0.5), key=lambda x: x[1]["recall"])[:6]
+    tried = [a for a in attempts if a.get("parent") == parent and a.get("code_summary")]
+    prompt = CODE_PROMPT.format(
+        weak="\n".join(f"- {t}: recall {v['recall']:.2f} on {v['n']} filings" for t, v in weak)
+        or "- (none below 0.5; improve overall ranking)",
+        expected="\n".join(f"- {t}: {', '.join(NAMES.get(t, []))}" for t, _ in weak
+                           if NAMES.get(t)) or "- (no rules for these topics)",
+        tried="\n".join(f"- {a['code_summary']} -> {a['decision']} ({a['reason']})"
+                        for a in tried) or "- none yet")
+    out = llm("You write small, safe, deterministic Python feature extractors.", prompt)
+    m = _re.search(r"```(?:python)?\s*\n(.*?)```", out, _re.DOTALL)
+    if not m:
+        raise ValueError("no python code block in the reply")
+    why = _re.search(r"RATIONALE:\s*(.+)", out)
+    return m.group(1).strip() + "\n", (why.group(1).strip() if why else "")[:300]
+
+
+def code_step(records: list[dict], filings_root: Path, reg: Registry, llm, log=print) -> dict:
+    """One attempt where the system writes code: LLM plugin -> safety check -> sandbox -> judge."""
+    from ..judge.cases import cases_from
+    from .plugins import UnsafeCode, extract, plugin_id
+
+    state = reg.state()
+    parent = state["champion"]
+    if parent is None:
+        raise RuntimeError("no champion yet: run a normal step first")
+    pmeta = reg.meta(parent)
+    attempts = reg.attempts()
+    code, why = code_propose(pmeta, attempts, parent, llm)
+    pid = plugin_id(code)
+    summary = why or "generated feature plugin"
+    extra = {"code_summary": summary, "code_path": f"plugins/{pid}/code.py",
+             "code_sha": pid[1:]}
+    log(f"generated plugin {pid}: {summary}")
+    try:
+        case_ids = sorted({c.case_id for c in cases_from(records)})
+        extract(code, filings_root, case_ids, reg.root.parent / "plugins", log=log)
+    except UnsafeCode as e:
+        (reg.root.parent / "plugins" / pid).mkdir(parents=True, exist_ok=True)
+        (reg.root.parent / "plugins" / pid / "code.py").write_text(code, encoding="utf-8")
+        entry = {"attempt": True, "version": None, "parent": parent, "changes": {"plugin": pid},
+                 "rationale": "llm-code: " + summary, "findings": [], **extra,
+                 "decision": "reject", "reason": f"blocked before training: {e}"[:300]}
+        reg.log(entry)
+        log(f"{pid}: rejected before training ({e})")
+        return entry
+    recipe = Recipe.from_dict(pmeta["recipe"])
+    cand = Recipe.from_dict({**recipe.to_dict(), "plugin": pid})
+    return _evaluate(records, filings_root, reg, parent, pmeta, cand, {"plugin": pid},
+                     "llm-code: " + summary, [], log, extra)
 
 
 def run(records, filings_root: Path, reg: Registry, iterations: int, llm=None,
