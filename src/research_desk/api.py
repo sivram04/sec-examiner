@@ -32,6 +32,16 @@ class Backend:
     index: Any = None
     llm: Any = None
     fetch_releases: bool = True   # earnings releases come from SEC; off for offline tests
+    examiner_service: Any = None
+
+    @cached_property
+    def examiner(self):
+        if self.examiner_service is None:
+            from .examiner.service import ExaminerService
+
+            self.examiner_service = ExaminerService(self.data / "examiner" / "models",
+                                                    self.data / "examiner" / "letters.jsonl")
+        return self.examiner_service
 
     @cached_property
     def idx(self):
@@ -108,6 +118,12 @@ def _desk_response(thread: str, out: dict) -> dict:
                 "interrupt": out["__interrupt__"][0].value, "trace": out.get("trace", [])}
     return {"thread": thread, "status": "done", "report": out["report"],
             "trace": out["trace"], "verdicts": out["verdicts"]}
+
+
+class DraftRequest(BaseModel):
+    text: str
+    sic: str = ""
+    form: str = "10-K"
 
 
 def create_app(backend: Backend | None = None) -> FastAPI:
@@ -199,6 +215,29 @@ def create_app(backend: Backend | None = None) -> FastAPI:
         out = be.desk.invoke(Command(resume=answer or {"approve": True}),
                              {"configurable": {"thread_id": thread}})
         return _desk_response(thread, out)
+
+    # --- SEC Examiner: stateless; nothing submitted is stored or learned from ----------------
+    @app.get("/api/examiner/status")
+    def examiner_status():
+        return be.examiner.status()
+
+    @app.get("/api/examiner/ticker/{ticker}")
+    def examiner_ticker(ticker: str):
+        if not ticker.replace(".", "").replace("-", "").isalnum() or len(ticker) > 10:
+            raise HTTPException(400, "invalid ticker")
+        try:
+            return be.examiner.examine_ticker(ticker)
+        except LookupError as e:
+            raise HTTPException(404, str(e)) from e
+
+    @app.post("/api/examiner/draft")
+    def examiner_draft(req: DraftRequest):
+        try:
+            return be.examiner.examine_draft(req.text, sic=req.sic, form=req.form)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        except LookupError as e:
+            raise HTTPException(503, str(e)) from e
 
     return app
 

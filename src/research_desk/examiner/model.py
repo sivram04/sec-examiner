@@ -224,14 +224,29 @@ class Examiner:
         score = self.weight_text * tp + (1 - self.weight_text) * pr
         return [LABELS[i] for i in np.argsort(-score)]
 
-    def predict(self, case, history: list[dict], sections: dict[str, str] | None) -> list[str]:
+    def signals(self, case, history: list[dict], sections: dict[str, str] | None):
+        """(text signal, prior signal) per label, before blending."""
         text = filing_text(sections, self.recipe)
         g = gap_features(sections)[None, :] if self.recipe.gaps else None
         tp = self.text_probs([text], g)[0]
         if self.embed_share and sections is not None and "__emb__" in sections:
             ep = self.emb_probs(sections["__emb__"][None, :])[0]
             tp = (1 - self.embed_share) * tp + self.embed_share * ep
-        return self.rank(tp, priors(case, history, self.recipe))
+        return tp, priors(case, history, self.recipe)
+
+    def predict(self, case, history: list[dict], sections: dict[str, str] | None) -> list[str]:
+        return self.rank(*self.signals(case, history, sections))
+
+    def explain(self, case, history: list[dict], sections: dict[str, str] | None) -> list[dict]:
+        """Every label with its blended score and how much came from the filing vs history."""
+        tp, pr = self.signals(case, history, sections)
+        tpn, prn = tp / (tp.max() or 1.0), pr / (pr.max() or 1.0)
+        w = self.weight_text
+        rows = [{"topic": t, "score": round(float(w * tpn[i] + (1 - w) * prn[i]), 4),
+                 "from_filing": round(float(w * tpn[i]), 4),
+                 "from_history": round(float((1 - w) * prn[i]), 4)}
+                for i, t in enumerate(LABELS)]
+        return sorted(rows, key=lambda r: -r["score"])
 
     def save(self, root: Path) -> Path:
         d = root / self.version

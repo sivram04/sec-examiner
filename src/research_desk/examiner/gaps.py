@@ -67,6 +67,44 @@ RULES: dict[str, tuple[str, list[str]]] = {
         r"sanctions?", r"cash transfers?|transfer of cash"]),
 }
 
+# plain-English name of each expected disclosure, in RULES order (shown to users)
+NAMES: dict[str, list[str]] = {
+    "impairment": ["goodwill by reporting unit",
+                   "reporting units whose fair value is close to carrying value", "headroom (how far fair value exceeds carrying value)",
+                   "discount rate assumptions", "type of impairment test performed"],
+    "income_taxes": ["valuation allowance", "effective tax rate explanation",
+                     "unrecognized tax benefits", "statutory rate reconciliation"],
+    "non_gaap": ["the most directly comparable GAAP measure", "reconciliation to GAAP",
+                 "caution that the measure is not a substitute for GAAP"],
+    "revenue_recognition": ["disaggregated revenue", "remaining performance obligations",
+                            "principal versus agent judgment", "contract assets and liabilities"],
+    "segments": ["chief operating decision maker", "segment profit measure",
+                 "reconciliation of segment totals", "significant segment expenses"],
+    "cybersecurity": ["Item 1C disclosure", "named security lead (CISO)",
+                      "use of third-party assessors", "board or committee oversight"],
+    "financial_instruments": ["valuation techniques", "unobservable inputs", "hedging policy",
+                              "counterparty risk"],
+    "legal_contingencies": ["whether a loss is reasonably possible", "estimate or range of loss",
+                            "accrual policy (ASC 450)"],
+    "liquidity": ["material cash requirements", "debt covenants", "12-month liquidity outlook",
+                  "credit facility terms", "operating cash flow discussion"],
+    "critical_estimates": ["sensitivity analysis", "hypothetical change scenarios",
+                           "quantified effect of changes", "reasonably likely changes"],
+    "mdna_drivers": ["reasons for changes", "offsetting factors", "price effects",
+                     "volume effects"],
+    "controls": ["material weakness assessment", "remediation plans",
+                 "effectiveness conclusion"],
+    "kpis": ["definition of each metric", "how each metric is calculated",
+             "comparison with prior periods"],
+    "climate": ["physical climate risks", "transition risks", "emissions",
+                "climate regulation"],
+    "crypto": ["custody arrangements", "safeguarding of assets", "fair value of holdings"],
+    "known_trends": ["known trends and uncertainties", "expected future effects",
+                     "reasonably likely impacts"],
+    "geopolitical": ["HFCAA status", "VIE structure", "sanctions exposure",
+                     "cash transfers within the group"],
+}
+
 _COMPILED = [(t, re.compile(trig), [re.compile(e) for e in exp]) for t, (trig, exp) in RULES.items()]
 TOPICS = [t for t, _, _ in _COMPILED]
 N_FEATURES = 4 * len(_COMPILED)
@@ -97,7 +135,7 @@ def gaps_report(sections: dict[str, str] | None) -> dict[str, list[str]]:
     out = {}
     for t, trig, expected in _COMPILED:
         if trig.search(text):
-            missing = [e.pattern for e in expected if not e.search(text)]
+            missing = [NAMES[t][j] for j, e in enumerate(expected) if not e.search(text)]
             if missing:
                 out[t] = missing
     return out
