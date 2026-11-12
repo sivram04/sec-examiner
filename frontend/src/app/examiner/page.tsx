@@ -96,8 +96,11 @@ function Result({ r }: { r: ExamResult }) {
           SEC staff are most likely to comment on{" "}
           <strong>{r.predictions.slice(0, 3).map((p) => p.label).join(", ")}</strong>.
         </p>
+        {r.note && (
+          <p className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">{r.note}</p>
+        )}
         <div className="mt-2 text-[12px] text-muted">
-          Sections read: {sections.join(", ")} · model {r.model} · {r.secs}s
+          Sections read: {sections.join(", ")} · {r.words.toLocaleString()} words · model {r.model} · {r.cached ? "cached, " : ""}{r.secs}s
         </div>
       </div>
 
@@ -227,7 +230,7 @@ export default function ExaminerPage() {
       <section className="rounded-xl border border-line bg-panel p-4">
         <div className="mb-3 inline-flex rounded-lg bg-chip p-1 text-[13px]" role="tablist">
           {(["ticker", "draft"] as const).map((m) => (
-            <button key={m} role="tab" aria-selected={mode === m} onClick={() => { setMode(m); setError(""); }}
+            <button key={m} role="tab" aria-selected={mode === m} onClick={() => { if (m !== mode) { setMode(m); setError(""); setRes(null); } }}
               className={`rounded-md px-3 py-1.5 ${mode === m ? "bg-panel font-medium text-ink shadow-sm" : "text-muted hover:text-ink"}`}>
               {m === "ticker" ? "Company ticker" : "Paste a draft"}
             </button>

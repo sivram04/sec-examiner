@@ -117,9 +117,19 @@ def filing_text(sections: dict[str, str] | None, recipe: Recipe | None = None) -
     return "\n".join(f"[item {k}] {v}" for k, v in keep)[: r.max_chars]
 
 
-def _letter_topics(L: dict) -> set[str]:
-    return {primary_topic(c["section"], c["text"]) for c in L["comments"]
-            if not is_follow_up(c["text"], c["follow_up"])} - {"other"}
+_TOPIC_CACHE: dict[str, frozenset[str]] = {}
+
+
+def _letter_topics(L: dict) -> frozenset[str]:
+    """Topics of a letter's first-round comments. Letters are immutable, so cache by accession."""
+    key = L.get("accession")
+    if key and key in _TOPIC_CACHE:
+        return _TOPIC_CACHE[key]
+    ts = frozenset({primary_topic(c["section"], c["text"]) for c in L["comments"]
+                    if not is_follow_up(c["text"], c["follow_up"])} - {"other"})
+    if key:
+        _TOPIC_CACHE[key] = ts
+    return ts
 
 
 def priors(case, history: list[dict], recipe: Recipe | None = None) -> np.ndarray:

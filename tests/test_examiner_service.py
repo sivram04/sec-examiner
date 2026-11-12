@@ -50,3 +50,12 @@ def test_status_and_ticker_validation(tmp_path):
     assert s["champion"] == "v1" and s["holdout"]["f1"] == 0.38
     assert s["topic_recall"][0]["topic"] == "non_gaap" and s["attempts"][0]["version"] == "v1"
     assert c.get("/api/examiner/ticker/bad$ticker").status_code == 400
+
+
+def test_short_draft_warns_and_sic_is_validated(tmp_path):
+    c, _ = client(tmp_path)
+    body = c.post("/api/examiner/draft", json={"text": "adjusted ebitda"}).json()
+    assert body["note"] and body["words"] == 2
+    long = c.post("/api/examiner/draft", json={"text": NG_TEXT * 60}).json()
+    assert long["note"] is None
+    assert c.post("/api/examiner/draft", json={"text": "x", "sic": "'; drop"}).status_code == 422

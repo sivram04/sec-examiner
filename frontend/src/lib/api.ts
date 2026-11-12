@@ -1,5 +1,5 @@
 // Typed client for the FastAPI backend (src/research_desk/api.py).
-export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8011";
+export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8011";
 
 export type Company = { ticker: string; documents: number; latest_filing: string };
 export type Hit = {
@@ -24,6 +24,9 @@ export type Prediction = {
 };
 export type ExamResult = {
   model: string;
+  note: string | null;
+  words: number;
+  cached?: boolean;
   filing: { company: string; form: string; filed: string; period: string | null; url: string; sic: string };
   predictions: Prediction[];
   others: { topic: string; label: string; score: number }[];
