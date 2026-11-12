@@ -81,3 +81,7 @@ New split: train on letters published before 2024 (1,457 cases), selection = 202
 | v3 | ngram_max 3, min_df 2 (Gemini) | 0.356 | 0.353 | reject |
 
 Best baselines: selection 0.312 (company history), holdout 0.318 (recent base rate). The Examiner beats them by +0.045 and +0.034, and selection ≈ holdout, so it generalises to a later year. Recipe tuning has plateaued (vocabulary changes moved F1 by ≤0.002); the next gains need a stronger model, e.g. semantic embeddings for weak topics.
+
+### Passage embeddings (2026-11-11)
+
+v4 added local Ollama `nomic-embed-text` embeddings (24 topic passages per filing, all 2,597 filings, 0 errors) as a tunable share of the text signal (`embed_grid`). Tuning chose share 0.0 on 510 validation cases, so v4 equals v1 (selection 0.357, holdout 0.352) and was rejected. Likely causes: a few percent of each filing embedded; SEC comments often target omissions, which topic similarity does not measure. Next: per-topic "gap" features (topic discussed but expected disclosure missing).
