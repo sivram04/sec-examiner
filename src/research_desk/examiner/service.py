@@ -85,7 +85,7 @@ class ExaminerService:
             "predictions": top,
             "others": [{"topic": r["topic"], "label": _label(r["topic"]), "score": r["score"]}
                        for r in rows[TOP_K:]],
-            "past_letters": [{"date": L["letter_date"], "topics": sorted(_letter_topics(L)),
+            "past_letters": [{"date": L["letter_date"], "topics": sorted(_label(t) for t in _letter_topics(L)),
                               "comments": len(L["comments"])} for L in past[:5]],
             "sections_read": sorted(k for k in sections if not k.startswith("__")),
             "secs": round(time.time() - t0, 2),
@@ -97,11 +97,11 @@ class ExaminerService:
         try:
             cik = edgar.cik(ticker)
         except KeyError as e:
-            raise LookupError(f"unknown ticker {ticker!r}") from e
+            raise LookupError(f"No company with ticker {ticker.upper()} on SEC EDGAR. Check the symbol and try again.") from e
         subs = edgar.http.get(SUBMISSIONS_URL.format(cik=cik)).raise_for_status().json()
         filings = [f for f in edgar.filings_cik((cik,), PERIODIC) if not f.form.endswith("/A")]
         if not filings:
-            raise LookupError(f"{ticker.upper()} has no 10-K, 10-Q or 20-F on EDGAR")
+            raise LookupError(f"{ticker.upper()} has no 10-K, 10-Q or 20-F on SEC EDGAR to examine.")
         f = filings[0]
         sections = extract(edgar.document(f), f.form)
         case = Case(f.accession, cik, subs.get("name", ticker.upper()), str(subs.get("sic", "")),

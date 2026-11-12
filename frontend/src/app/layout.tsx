@@ -11,15 +11,20 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body className="font-sans antialiased">
-        <header className="flex flex-wrap items-baseline gap-4 px-4 pt-5 sm:px-6">
-          <h1 className="text-lg font-semibold">SEC Examiner</h1>
-          <p className="text-sm text-muted">
-            Predicts what SEC staff will question in a 10-K, 10-Q or 20-F. Graded against real
-            comment letters. Not legal advice.
-          </p>
+        <header className="border-b border-line bg-panel">
+          <div className="mx-auto flex max-w-5xl flex-wrap items-end justify-between gap-x-6 px-4 pt-4 sm:px-6">
+            <a href="/examiner" className="flex items-center gap-2 pb-3">
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-sm font-bold text-accent-ink">SE</span>
+              <span className="text-base font-semibold">SEC Examiner</span>
+            </a>
+            <Nav />
+          </div>
         </header>
-        <Nav />
-        <main className="mx-auto max-w-5xl px-4 pt-5 pb-16 sm:px-6">{children}</main>
+        <main className="mx-auto max-w-5xl px-4 pt-6 pb-16 sm:px-6">{children}</main>
+        <footer className="mx-auto max-w-5xl px-4 pb-8 text-[12px] text-muted sm:px-6">
+          Predictions are statistical and graded against public SEC comment letters. Not legal or
+          accounting advice.
+        </footer>
       </body>
     </html>
   );

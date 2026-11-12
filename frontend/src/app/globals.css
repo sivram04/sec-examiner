@@ -10,6 +10,7 @@
   --accent-ink: #ffffff;
   --good: #2f7d4f;
   --bad: #b0412e;
+  --warn: #9a6200;
   --chip: #eef1f4;
 }
 
@@ -24,6 +25,7 @@
     --accent-ink: #0d1116;
     --good: #6cc391;
     --bad: #e58b78;
+    --warn: #e2b35c;
     --chip: #242a30;
   }
 }
@@ -38,6 +40,7 @@
   --color-accent-ink: var(--accent-ink);
   --color-good: var(--good);
   --color-bad: var(--bad);
+  --color-warn: var(--warn);
   --color-chip: var(--chip);
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
