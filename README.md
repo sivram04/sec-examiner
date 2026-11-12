@@ -7,7 +7,7 @@
   <img alt="Next.js 15" src="https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-REST-009688?logo=fastapi&logoColor=white">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-5%20tools-6E56CF">
-  <img alt="106 tests passing" src="https://img.shields.io/badge/tests-106%20passing-2f7d4f">
+  <img alt="129 tests passing" src="https://img.shields.io/badge/tests-129%20passing-2f7d4f">
   <img alt="Free to run" src="https://img.shields.io/badge/cost-%240%20to%20run-1f5f8b">
 </p>
 
@@ -27,11 +27,13 @@ F1@5 of <strong>0.352</strong> on 380 filings from 2025–26, vs. 0.318 for the 
 
 <p align="center"><sub>Alibaba's latest 20-F, examined in 8&nbsp;seconds. Every prediction says how much came from the filing and how much from SEC&nbsp;history.</sub></p>
 
-<p align="center"><a href="#your-turn">Try it on one company&nbsp;↓</a> · <a href="#how-it-improves-itself">See how it improves itself&nbsp;→</a> · <a href="#use-it-from-your-ai-assistant-mcp">Use it from Claude or Cursor&nbsp;→</a></p>
+<p align="center"><a href="https://sec-examiner-408632234593.us-central1.run.app"><strong>Try the live demo&nbsp;→</strong></a> · <a href="#your-turn">Run it yourself&nbsp;↓</a> · <a href="#how-it-improves-itself">See how it improves itself&nbsp;→</a> · <a href="#use-it-from-your-ai-assistant-mcp">Use it from Claude or Cursor&nbsp;→</a></p>
 
 <br>
 
 ## Your turn
+
+**Live demo:** <https://sec-examiner-408632234593.us-central1.run.app> — no sign-up. Each visitor gets **2 free examinations per day**; for unlimited use, run it on your machine:
 
 Pick a company you know. If the Examiner's top topic matches the last letter the SEC sent them, you will see why this exists.
 
@@ -43,7 +45,7 @@ npm --prefix frontend install && npm --prefix frontend run dev -- -p 3011
 
 Open <http://localhost:3011>, type a ticker (or click **TSLA**, **BABA**, **COIN**) and press **Examine**.
 
-<p align="center"><sub>Local. Free. No account, no database, no API key needed to examine.</sub></p>
+<p align="center"><sub>Local. Free. No account, no database, no API key needed to examine. Unlimited when you run it yourself.</sub></p>
 
 ## What the Examiner does for you
 
@@ -74,6 +76,8 @@ Give it a report. It tells you where the SEC is likely to push.
 | **Self-improvement loop** | Diagnoses weak topics, proposes a change (Gemini or fixed rules), retrains, and lets the judge decide. Rejected versions stay in the audit log. |
 | **Sealed judge** | SHA-256 manifest over the grading code, 4 baselines, point-in-time history, minimum-gain and latency/cost gates. |
 | **MCP server** | `examine_company`, `examine_draft`, `explain_topic`, `list_topics`, `examiner_status` for Claude, Cursor, VS Code or any MCP client. |
+| **Code-writing loop** | `desk examiner-improve --code`: Gemini writes a Python feature function; a static safety check and an isolated sandbox run it; the judge decides. |
+| **Usage limits and monitoring** | Public demo: 2 examinations per visitor IP per day, 300 site-wide, IPs kept only as daily-rotating hashes; `/api/metrics` shows requests, errors and p50/p95 latency; JSON request logs. |
 | **REST API** | `GET /api/examiner/ticker/{ticker}`, `POST /api/examiner/draft`, `GET /api/examiner/status`. |
 
 <details>
@@ -111,7 +115,13 @@ No one writes code for an update. Each run of `desk examiner-improve`:
 3. **Retrains** on letters published before 2024 and grades on 2024 (selection) and 2025–26 (holdout).
 4. **Ships** only if the judge passes it and it beats the champion by at least 0.005 on selection. The holdout is reported, never used to choose.
 
-The honest record so far: 5 versions tried, 1 shipped. Bigger vocabularies, meaning embeddings (local Ollama) and disclosure-gap features were each tried and rejected because they did not beat v1. See [`docs/judge.md`](docs/judge.md) for every number.
+**It can also write code.** `desk examiner-improve --code` asks Gemini for a new `features(text)` Python function aimed at the weak topics. Before that code touches the model:
+
+- a static check of its syntax tree allows only `re` and `math`, and blocks files, network, `eval`/`exec`, reflection, dunder attributes and format-string escapes (14 escape attempts are in the tests);
+- it runs in a separate isolated interpreter (`python -I`, empty directory, no secrets, time limit), twice on a sample to prove it is deterministic, then on every filing;
+- its features join the model as a recipe option, and the sealed judge decides like any other change. Rejected code stays on disk and in the audit log; only promoted code is ever served.
+
+The honest record so far: 7 versions tried (2 of them written as code by the system), 1 shipped. Bigger vocabularies, meaning embeddings (local Ollama), hand-written disclosure-gap rules and two system-written code plugins were each tried and rejected because they did not beat v1. See [`docs/judge.md`](docs/judge.md) for every number.
 
 | | Selection (2024, 640 filings) | Holdout (2025–26, 380 filings) |
 | --- | --- | --- |
@@ -152,7 +162,7 @@ git clone <this repo> && cd 02-ai-research-desk
 python -m venv .venv && . .venv/Scripts/activate      # macOS/Linux: . .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env              # set SEC_USER_AGENT to "<name> <email>" (SEC asks for one)
-pytest -q                         # 106 tests
+pytest -q                         # 129 tests
 ```
 
 <details>
@@ -185,6 +195,9 @@ src/research_desk/
 │   ├── embed.py         # optional local embeddings (Ollama)
 │   ├── run.py           # train + grade with the judge (selection / holdout)
 │   ├── improve.py       # diagnose -> propose -> train -> judge -> ship/reject, registry, audit log
+│   ├── plugins.py       # system-written feature code: safety check, sandbox, cache
+│   ├── plugin_runner.py # the isolated interpreter's entry point
+│   ├── limits.py        # per-IP daily quota and request metrics (public demo)
 │   ├── service.py       # stateless product service (ticker, draft, status)
 │   └── mcp_server.py    # MCP tools
 ├── judge/               # hash-sealed: topics, cases, scoring, baselines, harness, gates.json
@@ -206,7 +219,7 @@ docs/judge.md            # judge rules, corpus stats, every version's numbers
 | Backend | FastAPI, Pydantic |
 | Frontend | Next.js 15, React 19, Tailwind CSS 4 |
 | Integration | Model Context Protocol (Python SDK) |
-| Quality | pytest (106 tests), ruff, ESLint, TypeScript |
+| Quality | pytest (129 tests), ruff, ESLint, TypeScript |
 
 ## FAQ
 
@@ -215,6 +228,8 @@ docs/judge.md            # judge rules, corpus stats, every version's numbers
 **Why do MD&A, non-GAAP and segments show up so often?** They are the SEC's most common comment topics. Company-specific topics rise when the filing gives a reason: China and sanctions for Alibaba, climate for energy companies, financial instruments for banks.
 
 **Why not use an LLM to read the whole filing?** Cost and honesty. The current model runs in milliseconds on a laptop and every change is graded on 1,000+ real cases. An LLM reader is a candidate the loop can test next; it ships only if it wins.
+
+**Why only 2 checks on the live demo?** It runs on a small budget with no accounts. Run it locally (Quick Start) for unlimited use, the full CLI and the MCP server.
 
 **Does any of my data leave my machine?** Ticker lookups call SEC EDGAR. Drafts never leave the process. The improvement loop sends only aggregate diagnostics (per-topic recall, recipe) to Gemini, never filing text or drafts.
 
