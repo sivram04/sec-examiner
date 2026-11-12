@@ -1,0 +1,12 @@
+# What the deployed Examiner needs, pinned to the versions the champion model was trained with
+# (joblib model files only load reliably with the same scikit-learn / NumPy).
+scikit-learn==1.9.1
+numpy==2.5.4
+scipy==1.18.1
+joblib==1.6.0
+fastapi==0.162.0
+uvicorn==0.54.0
+httpx==0.28.1
+pydantic-settings==2.16.2
+beautifulsoup4==4.15.0
+lxml==6.1.3

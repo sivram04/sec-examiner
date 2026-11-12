@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, type ExamResult, type LoopStatus, type Prediction } from "@/lib/api";
+import { api, type ExamResult, type LoopStatus, type Prediction, type Quota } from "@/lib/api";
+
+const REPO = "https://github.com/sivram04/sec-examiner#quick-start";
 
 const EXAMPLES = ["TSLA", "NVDA", "AAPL", "BABA", "COIN", "PLTR"];
 
@@ -193,8 +195,14 @@ export default function ExaminerPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState<LoopStatus | null>(null);
+  const [quota, setQuota] = useState<Quota | null>(null);
+  const refreshQuota = () => api.quota().then(setQuota).catch(() => {});
 
-  useEffect(() => { api.loopStatus().then(setStatus).catch(() => {}); }, []);
+  useEffect(() => {
+    api.loopStatus().then(setStatus).catch(() => {});
+    refreshQuota();
+  }, []);
+  const outOfQuota = quota?.limited === true && quota.remaining === 0;
 
   async function run(p: () => Promise<ExamResult>) {
     setBusy(true);
@@ -207,6 +215,7 @@ export default function ExaminerPage() {
       setError(m === "Failed to fetch" ? "Cannot reach the Examiner API. Is the backend running?" : m);
     } finally {
       setBusy(false);
+      refreshQuota();
     }
   }
 
@@ -228,6 +237,17 @@ export default function ExaminerPage() {
       </section>
 
       <section className="rounded-xl border border-line bg-panel p-4">
+        {quota?.limited && (
+          <div className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-[13px] ${outOfQuota ? "bg-warn/10 text-warn" : "bg-chip text-muted"}`}>
+            <span>
+              {outOfQuota
+                ? "You have used today's free examinations."
+                : `${quota.remaining} of ${quota.limit} free examinations left today.`}{" "}
+              Resets at {quota.resets}.
+            </span>
+            <a className="font-medium text-accent" href={REPO} target="_blank" rel="noreferrer">Run it locally for unlimited use →</a>
+          </div>
+        )}
         <div className="mb-3 inline-flex rounded-lg bg-chip p-1 text-[13px]" role="tablist">
           {(["ticker", "draft"] as const).map((m) => (
             <button key={m} role="tab" aria-selected={mode === m} onClick={() => { if (m !== mode) { setMode(m); setError(""); setRes(null); } }}
@@ -242,12 +262,12 @@ export default function ExaminerPage() {
             <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); examineTicker(ticker); }}>
               <input className="field flex-1 sm:max-w-xs" aria-label="Ticker" placeholder="Ticker, e.g. TSLA"
                 value={ticker} autoComplete="off" onChange={(e) => setTicker(e.target.value.toUpperCase())} />
-              <button className="btn" disabled={busy || !ticker.trim()}>{busy ? "Examining…" : "Examine"}</button>
+              <button className="btn" disabled={busy || outOfQuota || !ticker.trim()}>{busy ? "Examining…" : "Examine"}</button>
             </form>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12.5px]">
               <span className="text-muted">Try:</span>
               {EXAMPLES.map((t) => (
-                <button key={t} disabled={busy} onClick={() => examineTicker(t)}
+                <button key={t} disabled={busy || outOfQuota} onClick={() => examineTicker(t)}
                   className="rounded-full border border-line px-2.5 py-0.5 hover:border-accent hover:text-accent disabled:opacity-50">
                   {t}
                 </button>
@@ -262,7 +282,7 @@ export default function ExaminerPage() {
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <input className="field w-44" aria-label="Industry SIC code (optional)" placeholder="SIC code (optional)"
                 inputMode="numeric" value={sic} onChange={(e) => setSic(e.target.value.replace(/\D/g, "").slice(0, 4))} />
-              <button className="btn" disabled={busy || !draft.trim()}>{busy ? "Examining…" : "Examine draft"}</button>
+              <button className="btn" disabled={busy || outOfQuota || !draft.trim()}>{busy ? "Examining…" : "Examine draft"}</button>
               <button type="button" className="text-[13px] text-accent" onClick={() => setDraft(SAMPLE_DRAFT)}>
                 Use a sample
               </button>

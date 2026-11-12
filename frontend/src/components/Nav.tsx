@@ -13,7 +13,7 @@ export default function Nav() {
   return (
     <nav className="flex gap-1">
       {TABS.map((t) => {
-        const active = path.startsWith(t.href);
+        const active = path.startsWith(t.href) || (t.href === "/examiner" && path === "/");
         return (
           <Link
             key={t.href}

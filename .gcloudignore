@@ -1,0 +1,17 @@
+# Upload only what the image needs (gcloud would otherwise fall back to .gitignore, which drops data/)
+.git
+.venv
+**/__pycache__
+**/node_modules
+frontend/.next
+frontend/out
+data/
+evals
+tests
+docs
+.env
+.env.*
+!.env.example
+.pytest_cache
+.ruff_cache
+.github

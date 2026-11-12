@@ -1,0 +1,29 @@
+# SEC Examiner: one container serving the static web app and the API from the same origin.
+# Build: gcloud builds submit --config cloudbuild.yaml   (or docker build -f Dockerfile.serve .)
+
+# --- web app: static export --------------------------------------------------------------
+FROM node:22-slim AS web
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN STATIC_EXPORT=1 NEXT_PUBLIC_API_URL="" npm run build
+
+# --- API + model ---------------------------------------------------------------------------
+FROM python:3.14-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    EXAMINER_PUBLIC=1 STATIC_DIR=/app/web PORT=8080
+WORKDIR /app
+COPY requirements-serve.txt ./
+RUN pip install -r requirements-serve.txt
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --no-deps . && useradd --create-home examiner
+# public SEC letters and the judge-approved champion only (no filing cache, no other versions)
+COPY deploy/letters.jsonl data/examiner/letters.jsonl
+COPY deploy/models data/examiner/models
+COPY --from=web /web/out /app/web
+RUN chown -R examiner /app
+USER examiner
+EXPOSE 8080
+CMD ["sh", "-c", "uvicorn research_desk.api:app --host 0.0.0.0 --port ${PORT}"]

@@ -6,6 +6,7 @@ The research endpoint is two-step for human-in-the-loop: POST /api/research retu
 finished report or an interrupt (plan to approve, flags to review) with a thread id; POST
 /api/research/{thread}/resume continues it.
 """
+import os
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -14,7 +15,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+import httpx
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -126,15 +128,57 @@ class DraftRequest(BaseModel):
     form: str = "10-K"
 
 
-def create_app(backend: Backend | None = None) -> FastAPI:
-    be = backend or Backend()
-    app = FastAPI(title="AI Research Desk")
-    # the Next.js front end (frontend/) runs on its own origin, locally and on Vercel
-    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins.split(","),
-                       allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
+def create_app(backend: Backend | None = None, guard=None) -> FastAPI:
+    from .examiner.limits import Metrics, UsageGuard, client_ip
 
-    @app.get("/")
+    be = backend or Backend()
+    guard = guard or UsageGuard.from_env()
+    metrics = Metrics()
+    static = os.environ.get("STATIC_DIR")      # the exported web app, served from this origin
+    app = FastAPI(title="SEC Examiner")
+    # the Next.js front end (frontend/) runs on its own origin in development
+    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins.split(","),
+                       allow_methods=["GET", "POST"], allow_headers=["Content-Type"],
+                       expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"])
+
+    @app.middleware("http")
+    async def monitor(request: Request, call_next):
+        t0 = time.time()
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/api/"):
+            # group per-ticker paths so metrics stay aggregate
+            key = "/api/examiner/ticker" if path.startswith("/api/examiner/ticker/") else path
+            metrics.record(key, response.status_code, time.time() - t0)
+        return response
+
+    def ip_of(request: Request) -> str:
+        return client_ip(request.headers, request.client.host if request.client else None)
+
+    def admit(request: Request, response: Response) -> str:
+        ip = ip_of(request)
+        why = guard.check(ip)
+        if why:
+            raise HTTPException(429, why, headers={"Retry-After": "3600"})
+        q = guard.quota(ip)
+        if q["limited"]:
+            response.headers["X-RateLimit-Limit"] = str(q["limit"])
+            response.headers["X-RateLimit-Remaining"] = str(max(0, q["remaining"] - 1))
+        return ip
+
+    @app.get("/api/examiner/quota")
+    def examiner_quota(request: Request):
+        return guard.quota(ip_of(request))
+
+    @app.get("/api/metrics")
+    def api_metrics():
+        """Aggregate monitoring: no IPs, no tickers, no draft text."""
+        return {"usage": guard.stats(), **metrics.snapshot()}
+
+    @app.get("/", include_in_schema=False)
     def index():
+        if static:
+            return FileResponse(os.path.join(static, "index.html"))
         return FileResponse(WEB / "index.html")
 
     @app.get("/api/health")
@@ -222,22 +266,36 @@ def create_app(backend: Backend | None = None) -> FastAPI:
         return be.examiner.status()
 
     @app.get("/api/examiner/ticker/{ticker}")
-    def examiner_ticker(ticker: str):
+    def examiner_ticker(ticker: str, request: Request, response: Response):
         if not ticker.replace(".", "").replace("-", "").isalnum() or len(ticker) > 10:
             raise HTTPException(400, "invalid ticker")
+        ip = admit(request, response)
         try:
-            return be.examiner.examine_ticker(ticker)
+            out = be.examiner.examine_ticker(ticker)
         except LookupError as e:
             raise HTTPException(404, str(e)) from e
+        except httpx.HTTPError as e:
+            raise HTTPException(502, "SEC EDGAR did not respond. Try again in a minute.") from e
+        guard.consume(ip)          # only successful examinations use quota
+        return out
 
     @app.post("/api/examiner/draft")
-    def examiner_draft(req: DraftRequest):
+    def examiner_draft(req: DraftRequest, request: Request, response: Response):
+        ip = admit(request, response)
         try:
-            return be.examiner.examine_draft(req.text, sic=req.sic, form=req.form)
+            out = be.examiner.examine_draft(req.text, sic=req.sic, form=req.form)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         except LookupError as e:
             raise HTTPException(503, str(e)) from e
+        guard.consume(ip)
+        return out
+
+    if static:
+        from fastapi.staticfiles import StaticFiles
+
+        # after every API route, so /api/* is never shadowed
+        app.mount("/", StaticFiles(directory=static, html=True), name="web")
 
     return app
 
