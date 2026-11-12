@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check } from "@/components/Icons";
+import RuledScale from "@/components/RuledScale";
 import { api, type Attempt, type LoopStatus } from "@/lib/api";
 
 const BASELINE_NAMES: Record<string, string> = {
@@ -12,162 +14,157 @@ const CHANGE_NAMES: Record<string, string> = {
   ngram_max: "phrase length", min_df: "min. word frequency", max_features: "vocabulary size",
   val_fraction: "validation share", prior_company: "company-history weight",
   prior_industry: "industry weight", prior_recent: "recent-trend weight", embed_grid: "meaning embeddings",
-  gaps: "disclosure-gap checks", plugin: "generated feature code", c_grid: "regularisation", weight_grid: "text vs. history weights",
-  sections: "sections read", max_chars: "text length", class_weight: "class balancing",
-  recent_days: "recent window",
+  gaps: "disclosure-gap checks", plugin: "generated feature code", c_grid: "regularisation",
+  weight_grid: "text vs. history weights", sections: "sections read", max_chars: "text length",
+  class_weight: "class balancing", recent_days: "recent window",
+};
+
+const RULE_WHY: Record<string, string> = {
+  weak_topic: "Targets topics the champion often misses",
+  validation_overstates: "Validation looked better than real results",
+  signal_unused: "Puts more weight on an under-used signal",
+  slow: "Makes predictions faster", slow_training: "Makes training faster",
+  gate_fail: "Champion failed a judge check",
 };
 
 function describe(changes: Record<string, unknown>): string[] {
   const keys = Object.keys(changes);
-  if (!keys.length) return ["Starting recipe"];
+  if (!keys.length) return ["starting recipe"];
   return keys.map((k) => {
     const v = changes[k];
-    const val = Array.isArray(v) ? (k === "embed_grid" ? "on" : v.join(", ")) : v === true ? "on" : String(v);
+    const val = k === "plugin" ? String(v) : Array.isArray(v) ? (k === "embed_grid" ? "on" : v.join(", ")) : v === true ? "on" : String(v);
     return `${CHANGE_NAMES[k] ?? k}: ${val}`;
   });
 }
 
-function Score({ title, note, w }: { title: string; note: string; w: LoopStatus["holdout"] }) {
-  const entries = Object.entries(w.baselines);
-  const best = Math.max(...entries.map(([, v]) => v));
-  const max = Math.max(best, w.f1 ?? 0) || 1;
-  return (
-    <div className="rounded-xl border border-line bg-panel p-4">
-      <div className="text-[12.5px] text-muted">{title}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-3xl font-semibold tracking-tight">{w.f1?.toFixed(3) ?? "–"}</span>
-        {w.f1 != null && (
-          <span className="rounded-full bg-good/15 px-2 py-0.5 text-[12px] font-medium text-good">
-            +{(w.f1 - best).toFixed(3)} vs. best baseline
-          </span>
-        )}
-      </div>
-      <p className="text-[12.5px] text-muted">F1@5 on {w.n} filings. {note}</p>
-      <ul className="mt-3 space-y-1.5 text-[12.5px]">
-        <li className="flex items-center gap-2">
-          <span className="w-40 shrink-0 font-medium">Examiner</span>
-          <span className="h-2 flex-1 rounded-full bg-chip"><span className="block h-2 rounded-full bg-accent" style={{ width: `${((w.f1 ?? 0) / max) * 100}%` }} /></span>
-          <span className="w-12 text-right font-mono">{w.f1?.toFixed(3)}</span>
-        </li>
-        {entries.map(([k, v]) => (
-          <li key={k} className="flex items-center gap-2 text-muted">
-            <span className="w-40 shrink-0">{BASELINE_NAMES[k] ?? k}</span>
-            <span className="h-2 flex-1 rounded-full bg-chip"><span className="block h-2 rounded-full bg-muted/50" style={{ width: `${(v / max) * 100}%` }} /></span>
-            <span className="w-12 text-right font-mono">{v.toFixed(3)}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+function source(a: Attempt) {
+  if (a.rationale.startsWith("llm-code:")) return "Gemini wrote code";
+  if (a.rationale.startsWith("llm:")) return "Gemini";
+  if (a.rationale.startsWith("rule:")) return "Fixed rule";
+  return "Starting recipe";
 }
 
-function AttemptRow({ a, champion }: { a: Attempt; champion: string | null }) {
-  const promoted = a.decision === "promote";
-  const source = a.rationale.startsWith("llm-code:") ? "Gemini (wrote code)" : a.rationale.startsWith("llm:") ? "Gemini" : a.rationale.startsWith("rule:") ? "Rule" : "Bootstrap";
-  const RULE_WHY: Record<string, string> = {
-    weak_topic: "Targets topics the champion often misses",
-    validation_overstates: "Validation looked better than real results",
-    signal_unused: "Puts more weight on an under-used signal",
-    slow: "Makes predictions faster", slow_training: "Makes training faster",
-    gate_fail: "Champion failed a judge check",
-  };
+function why(a: Attempt) {
   const raw = a.rationale.replace(/^(llm-code|llm|rule|bootstrap):\s*/, "");
-  const why = source === "Rule"
-    ? RULE_WHY[raw.replace(/^address\s+/, "")] ?? raw.replaceAll("_", " ")
-    : source === "Bootstrap" ? "First version on the 2021–2026 dataset, using the best earlier recipe" : raw;
-  return (
-    <li className="rounded-xl border border-line bg-panel p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="font-mono font-semibold">{a.version}</span>
-          {a.version === champion && <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-ink">champion</span>}
-          {a.parent && <span className="text-[12px] text-muted">built from {a.parent}</span>}
-          <span className="rounded bg-chip px-1.5 py-0.5 text-[11px] text-muted">proposed by {source}</span>
-        </div>
-        <span className={`rounded-full px-2.5 py-0.5 text-[12px] font-medium ${promoted ? "bg-good/15 text-good" : "bg-bad/10 text-bad"}`}>
-          {promoted ? "✓ Shipped" : "✕ Rejected"}
-        </span>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {describe(a.changes).map((c) => <span key={c} className="rounded-md border border-line px-2 py-0.5 text-[12px]">{c}</span>)}
-      </div>
-      {why && <p className="mt-2 line-clamp-2 text-[12.5px] text-muted" title={why}>{why}</p>}
-      <div className="mt-2 flex flex-wrap gap-x-5 text-[12.5px]">
-        <span>Selection <span className="font-mono">{a.selection_f1?.toFixed(3) ?? "–"}</span></span>
-        <span>Holdout <span className="font-mono">{a.holdout_f1?.toFixed(3) ?? "–"}</span></span>
-        <span className="text-muted">{a.reason}</span>
-      </div>
-    </li>
-  );
+  if (a.rationale.startsWith("rule:")) return RULE_WHY[raw.replace(/^address\s+/, "")] ?? raw.replaceAll("_", " ");
+  if (a.rationale.startsWith("bootstrap")) return "First version on the 2021–2026 data, using the best earlier recipe";
+  return raw;
 }
+
+const STEPS = [
+  ["Diagnose", "Finds topics the champion misses, overfitting, and slow steps."],
+  ["Propose", "Gemini or a fixed rule suggests a settings change, or Gemini writes new feature code."],
+  ["Check and sandbox", "Code is statically checked and run in an isolated interpreter with a time limit."],
+  ["Judge", "The sealed judge grades it on real SEC letters. It ships only if it passes and beats the champion."],
+];
 
 export default function Loop() {
   const [s, setS] = useState<LoopStatus | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     api.loopStatus().then(setS).catch((e: Error) =>
-      setError(e.message === "Failed to fetch" ? "Cannot reach the Examiner API. Is the backend running?" : e.message));
+      setError(e.message === "Failed to fetch" ? "Cannot reach the Examiner. Check your connection and try again." : e.message));
   }, []);
 
-  if (error) return <div role="alert" className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-3 text-bad">{error}</div>;
-  if (!s) return <div className="space-y-3">{[0, 1].map((i) => <div key={i} className="h-40 animate-pulse rounded-xl bg-chip" />)}</div>;
-  const shipped = s.attempts.filter((a) => a.decision === "promote").length;
-  return (
-    <div className="space-y-6">
-      <section>
-        <h1 className="text-2xl font-semibold tracking-tight">How the Examiner improves itself</h1>
-        <p className="mt-1 max-w-3xl text-[14.5px] text-muted">
-          No one writes code for an update. The system finds its weak topics, proposes a change,
-          retrains, and ships the new version only if a sealed judge passes it on real SEC letters
-          and it beats the current champion.
-        </p>
-      </section>
+  const marks = (w: LoopStatus["holdout"]) => [
+    { label: "SEC Examiner (champion)", value: w.f1 ?? 0, ours: true },
+    ...Object.entries(w.baselines).map(([k, v]) => ({ label: BASELINE_NAMES[k] ?? k, value: v })),
+  ];
+  const shipped = s?.attempts.filter((a) => a.decision === "promote").length ?? 0;
+  const coded = s?.attempts.filter((a) => a.rationale.startsWith("llm-code:")).length ?? 0;
 
-      <ol className="grid gap-2 text-[13px] sm:grid-cols-4">
-        {["Diagnose weak topics", "Propose a change", "Retrain and grade", "Ship only if better"].map((t, i) => (
-          <li key={t} className="flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2">
-            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent text-[11px] font-semibold text-accent-ink">{i + 1}</span>{t}
+  return (
+    <div className="pt-8">
+      <h1 className="head max-w-4xl text-[2.9rem] font-black leading-[0.95] text-balance sm:text-[3.8rem]">
+        It improves itself. A sealed judge decides what ships.
+      </h1>
+      <p className="mt-4 max-w-[62ch] text-[17px] leading-relaxed">
+        No one writes code for an update. The system finds its weak spots, proposes a change or writes new code,
+        retrains, and ships the new version only if the judge passes it on real SEC letters and it beats the
+        current champion. Rejected attempts stay on the record below.
+      </p>
+
+      <ol className="mt-8 grid border-y border-rule sm:grid-cols-2 lg:grid-cols-4">
+        {STEPS.map(([t, d], i) => (
+          <li key={t} className={`py-4 sm:px-4 ${i ? "border-t border-line sm:border-t-0 sm:border-l" : ""} ${i === 2 ? "sm:border-l-0 lg:border-l" : ""}`}>
+            <div className="flex items-baseline gap-2">
+              <span className="head text-[1.8rem] font-black leading-none text-accent">§{i + 1}</span>
+              <span className="head text-lg font-bold">{t}</span>
+            </div>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-muted">{d}</p>
           </li>
         ))}
       </ol>
 
-      <div className="flex flex-wrap gap-2 text-[12.5px]">
-        <span className="rounded-full bg-chip px-3 py-1">Champion <strong>{s.champion ?? "none"}</strong></span>
-        <span className="rounded-full bg-chip px-3 py-1">{s.attempts.length} versions tried · {shipped} shipped</span>
-        <span className={`rounded-full px-3 py-1 ${s.judge_sealed ? "bg-good/15 text-good" : "bg-bad/15 text-bad"}`}>
-          {s.judge_sealed ? "✓ Judge sealed (untampered)" : "✕ Judge files changed"}
-        </span>
-        {s.train_window && (
-          <span className="rounded-full bg-chip px-3 py-1">Trained on {s.trained_on?.toLocaleString()} filings, {s.train_window[0].slice(0, 4)}–{s.train_window[1].slice(0, 4)}</span>
-        )}
-      </div>
+      {error && <div role="alert" className="mt-8 border-2 border-stamp px-4 py-3"><span className="caps mr-2 text-stamp">Unavailable</span>{error}</div>}
+      {!s && !error && <div className="mt-8 space-y-3" aria-hidden>{[0, 1, 2].map((i) => <div key={i} className="h-20 animate-pulse bg-chip/70" />)}</div>}
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <Score title="Selection · 2024 filings" w={s.selection} note="Used to decide whether a version ships." />
-        <Score title="Holdout · 2025–26 filings" w={s.holdout} note="A later year, never used to choose. The honest number." />
-      </div>
+      {s && (
+        <>
+          <div className="mt-8 flex flex-wrap gap-x-8 gap-y-2 text-[15px]">
+            <span>Champion <strong className="num">{s.champion ?? "none"}</strong></span>
+            <span><strong className="num">{s.attempts.length}</strong> versions tried · <strong className="num">{shipped}</strong> shipped · <strong className="num">{coded}</strong> written as code</span>
+            <span className={`inline-flex items-center gap-1.5 font-semibold ${s.judge_sealed ? "text-good" : "text-stamp"}`}>
+              {s.judge_sealed ? <><Check /> Judge sealed, files unchanged</> : "Judge files changed since sealing"}
+            </span>
+            {s.train_window && <span className="text-muted">Trained on {s.trained_on?.toLocaleString()} filings, {s.train_window[0].slice(0, 4)}–{s.train_window[1].slice(0, 4)}</span>}
+          </div>
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold">Every version tried, newest first</h2>
-        <ol className="space-y-3">{s.attempts.map((a) => <AttemptRow key={a.version} a={a} champion={s.champion} />)}</ol>
-      </section>
+          <section aria-labelledby="scores" className="rule-heavy mt-6">
+            <h2 id="scores" className="sr-only">Scores against baselines</h2>
+            <div className="grid gap-x-12 lg:grid-cols-2">
+              <RuledScale title="Holdout: 2025–26 filings" note={`${s.holdout.n} filings, never used to choose`} marks={marks(s.holdout)} />
+              <RuledScale title="Selection: 2024 filings" note={`${s.selection.n} filings, decides what ships`} marks={marks(s.selection)} />
+            </div>
+          </section>
 
-      <section className="rounded-xl border border-line bg-panel p-4">
-        <h2 className="text-sm font-semibold">Where the champion is strong and weak</h2>
-        <p className="mb-3 text-[12.5px] text-muted">Holdout recall: when the SEC raised a topic, how often it was in our top 5.</p>
-        <ul className="grid gap-x-8 gap-y-1.5 text-[13px] md:grid-cols-2">
-          {s.topic_recall.map((t) => (
-            <li key={t.topic} className="flex items-center gap-2">
-              <span className="w-44 shrink-0 truncate" title={t.label}>{t.label}</span>
-              <span className="h-2 flex-1 overflow-hidden rounded-full bg-chip">
-                <span className={`block h-2 rounded-full ${t.recall >= 0.6 ? "bg-good" : t.recall >= 0.3 ? "bg-warn" : "bg-bad"}`} style={{ width: `${Math.max(t.recall * 100, 2)}%` }} />
-              </span>
-              <span className="w-10 shrink-0 text-right font-mono">{Math.round(t.recall * 100)}%</span>
-              <span className="w-12 shrink-0 text-right text-[11.5px] text-muted">n={t.n}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+          <section aria-labelledby="attempts" className="rule-heavy mt-10 pt-4">
+            <h2 id="attempts" className="head text-[2rem] font-extrabold">Every version tried, newest first</h2>
+            <ol className="mt-3">
+              {s.attempts.map((a) => {
+                const promoted = a.decision === "promote";
+                return (
+                  <li key={a.version} className="grid gap-x-6 gap-y-2 border-t border-line py-4 md:grid-cols-[7rem_1fr_11rem]">
+                    <div>
+                      <div className="head text-[1.6rem] font-black leading-none">{a.version}</div>
+                      <div className="mt-1 text-[12.5px] text-muted">{a.parent ? `from ${a.parent}` : "first version"}{a.version === s.champion ? " · champion" : ""}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="caps text-accent">{source(a)}</div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {describe(a.changes).map((c) => <span key={c} className="num border border-line px-1.5 py-0.5 text-[12.5px]">{c}</span>)}
+                      </div>
+                      <p className="mt-1.5 text-[14px] leading-relaxed text-muted [overflow-wrap:anywhere]">{why(a)}</p>
+                    </div>
+                    <div className="md:text-right">
+                      {promoted ? <span className="inline-flex items-center gap-1 font-semibold text-good"><Check /> Shipped</span> : <span className="stamp">Rejected</span>}
+                      <div className="num mt-2 text-[13px]">sel {a.selection_f1?.toFixed(3) ?? "–"} · hold {a.holdout_f1?.toFixed(3) ?? "–"}</div>
+                      <div className="mt-1 text-[12.5px] text-muted">{a.reason}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+
+          <section aria-labelledby="recall" className="rule-heavy mt-10 pt-4">
+            <h2 id="recall" className="head text-[2rem] font-extrabold">Where the champion is strong, and where it is not</h2>
+            <p className="mt-1 text-[15px] text-muted">On the holdout: when the SEC raised a topic, how often it was in the top five.</p>
+            <ul className="mt-4 grid gap-x-12 md:grid-cols-2">
+              {s.topic_recall.map((t) => (
+                <li key={t.topic} className="flex items-center gap-3 border-b border-line py-1.5 text-[14px]">
+                  <span className="w-48 shrink-0 leading-snug">{t.label}</span>
+                  <span className="h-[5px] flex-1 bg-chip" aria-hidden>
+                    <span className={`block h-[5px] ${t.recall >= 0.6 ? "bg-accent" : t.recall >= 0.3 ? "bg-muted" : "bg-ink/25"}`} style={{ width: `${Math.max(t.recall * 100, 2)}%` }} />
+                  </span>
+                  <span className="num w-10 shrink-0 text-right">{Math.round(t.recall * 100)}%</span>
+                  <span className="num w-12 shrink-0 text-right text-[12px] text-muted">n={t.n}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
     </div>
   );
 }

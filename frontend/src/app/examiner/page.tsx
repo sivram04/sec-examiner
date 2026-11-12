@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { api, type ExamResult, type LoopStatus, type Prediction, type Quota } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight, ArrowUpRight, Lock } from "@/components/Icons";
+import { api, type ExamResult, type Prediction, type Quota } from "@/lib/api";
 
 const REPO = "https://github.com/sivram04/sec-examiner#quick-start";
-
-const EXAMPLES = ["TSLA", "NVDA", "AAPL", "BABA", "COIN", "PLTR"];
+const EXAMPLES = ["TSLA", "BABA", "NVDA", "AAPL", "JPM", "COIN"];
 
 const SECTION_NAMES: Record<string, string> = {
   "1": "Business", "1A": "Risk factors", "1B": "Staff comments", "1C": "Cybersecurity",
@@ -23,165 +23,147 @@ We have goodwill of $1.2 billion. We operate in two reportable segments.
 We have deferred tax assets of $340 million. Our operations in China are conducted in part
 through contractual arrangements.`;
 
-function likelihood(score: number) {
-  if (score >= 0.75) return { text: "High", cls: "bg-bad/15 text-bad" };
-  if (score >= 0.5) return { text: "Medium", cls: "bg-warn/20 text-warn" };
-  return { text: "Lower", cls: "bg-chip text-muted" };
+const STAGES = {
+  ticker: ["Finding the latest report on SEC EDGAR", "Reading business, risk factors, MD&A and notes",
+    "Comparing with past SEC letters", "Checking for expected disclosures"],
+  draft: ["Reading your draft", "Comparing with past SEC letters", "Checking for expected disclosures"],
+};
+
+function level(score: number) {
+  return score >= 0.75 ? "High" : score >= 0.5 ? "Medium" : "Lower";
 }
 
-function Split({ p }: { p: Prediction }) {
+function Topic({ p, rank }: { p: Prediction; rank: number }) {
   const total = p.from_filing + p.from_history || 1;
   const filing = Math.round((p.from_filing / total) * 100);
+  const l = level(p.score);
   return (
-    <div className="mt-3">
-      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-chip" aria-hidden>
-        <div className="bg-accent" style={{ width: `${filing}%` }} />
-        <div className="bg-muted/50" style={{ width: `${100 - filing}%` }} />
-      </div>
-      <div className="mt-1 flex justify-between text-[11.5px] text-muted">
-        <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-accent" />{filing}% from this filing&apos;s text</span>
-        <span>{100 - filing}% from past SEC letters<span className="ml-1 inline-block h-2 w-2 rounded-full bg-muted/50" /></span>
-      </div>
-    </div>
-  );
-}
-
-function TopicCard({ p, rank }: { p: Prediction; rank: number }) {
-  const l = likelihood(p.score);
-  return (
-    <li className="rounded-xl border border-line bg-panel p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-chip text-[12px] font-semibold">{rank}</span>
-          <div>
-            <h3 className="font-semibold leading-snug">{p.label}</h3>
-            {p.about && <p className="mt-0.5 text-[13px] text-muted">{p.about}</p>}
+    <li className="border-t border-line py-4">
+      <div className="flex items-baseline gap-3">
+        <span className="head w-7 shrink-0 text-[1.6rem] font-black leading-none text-accent">{rank}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h3 className="head text-[1.3rem] font-bold leading-tight">{p.label}</h3>
+            <span className={`caps ${l === "High" ? "text-ink underline decoration-2 underline-offset-4" : l === "Medium" ? "text-ink" : "text-muted"}`}>{l} likelihood</span>
           </div>
+          {p.about && <p className="mt-0.5 text-[14.5px] text-muted">{p.about}</p>}
+          <div className="mt-2.5 flex items-center gap-3" title={`${filing}% from the filing's text, ${100 - filing}% from past SEC letters`}>
+            <span className="flex h-[5px] flex-1 bg-chip" aria-hidden>
+              <span className="bg-accent" style={{ width: `${filing}%` }} />
+              <span className="bg-muted/45" style={{ width: `${100 - filing}%` }} />
+            </span>
+            <span className="num shrink-0 text-[12px] text-muted">{filing}% filing · {100 - filing}% history</span>
+          </div>
+          {p.missing.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-start gap-x-3 gap-y-2">
+              <span className="stamp mt-0.5">Not found</span>
+              <ul className="flex-1 text-[14.5px] leading-snug">
+                {p.missing.map((m) => <li key={m}>{m}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[12px] font-medium ${l.cls}`}>{l.text}</span>
       </div>
-      <Split p={p} />
-      {p.missing.length > 0 && (
-        <div className="mt-3 rounded-lg bg-chip/60 px-3 py-2">
-          <div className="text-[12.5px] font-medium">Not found in the filing</div>
-          <ul className="mt-1 space-y-0.5 text-[13px]">
-            {p.missing.map((m) => (
-              <li key={m} className="flex gap-2"><span className="text-bad" aria-hidden>✕</span>{m}</li>
-            ))}
-          </ul>
-        </div>
-      )}
     </li>
   );
 }
 
-function Result({ r }: { r: ExamResult }) {
+function Ruling({ r }: { r: ExamResult }) {
   const sections = [...new Set(r.sections_read.map((s) => SECTION_NAMES[s] ?? s))];
+  const draft = !r.filing.url;
   return (
-    <section className="space-y-4">
-      <div className="rounded-xl border border-line bg-panel p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <div className="text-[12px] uppercase tracking-wide text-muted">Examined</div>
-            <h2 className="text-lg font-semibold">{r.filing.company}</h2>
-            <div className="text-[13px] text-muted">
-              {r.filing.form}{r.filing.period ? ` for period ending ${r.filing.period}` : ""}
-              {r.filing.filed && r.filing.url ? ` · filed ${r.filing.filed}` : ""}
-            </div>
-          </div>
-          {r.filing.url && (
-            <a className="rounded-md border border-line px-3 py-1.5 text-[13px] text-accent hover:bg-chip"
-              href={r.filing.url} target="_blank" rel="noreferrer">Open filing ↗</a>
-          )}
-        </div>
-        <p className="mt-3 text-[14px]">
-          SEC staff are most likely to comment on{" "}
-          <strong>{r.predictions.slice(0, 3).map((p) => p.label).join(", ")}</strong>.
-        </p>
-        {r.note && (
-          <p className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">{r.note}</p>
+    <article className="print" aria-live="polite">
+      <div className="caps flex flex-wrap justify-between gap-2 border-b border-rule pb-2 text-muted">
+        <span>Ruling · {draft ? "Draft" : "Form"} {r.filing.form}</span>
+        <span>{r.filing.period ? `Period ending ${r.filing.period}` : `Examined ${r.filing.filed}`}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+        <h2 className="head text-[2.2rem] font-extrabold leading-[1.02] text-balance">{draft ? "Your draft" : r.filing.company}</h2>
+        {r.filing.url && (
+          <a className="btn-ghost shrink-0" href={r.filing.url} target="_blank" rel="noreferrer">Open filing <ArrowUpRight /></a>
         )}
-        <div className="mt-2 text-[12px] text-muted">
-          Sections read: {sections.join(", ")} · {r.words.toLocaleString()} words · model {r.model} · {r.cached ? "cached, " : ""}{r.secs}s
-        </div>
       </div>
+      <p className="mt-3 max-w-[60ch] text-[17px] leading-relaxed">
+        SEC staff are most likely to comment on <strong>{r.predictions.slice(0, 3).map((p) => p.label).join(", ")}</strong>.
+      </p>
+      {r.note && <p className="mt-3 border border-warn/50 bg-warn/10 px-3 py-2 text-[14px] text-warn">{r.note}</p>}
 
-      <div>
-        <h2 className="mb-2 text-sm font-semibold">Top 5 likely comment topics</h2>
-        <ol className="space-y-3">
-          {r.predictions.map((p, i) => <TopicCard key={p.topic} p={p} rank={i + 1} />)}
-        </ol>
-      </div>
+      <ol className="mt-4 border-b border-rule">
+        {r.predictions.map((p, i) => <Topic key={p.topic} p={p} rank={i + 1} />)}
+      </ol>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {r.filing.url && <div className="rounded-xl border border-line bg-panel p-4">
-          <h2 className="mb-2 text-sm font-semibold">Past SEC letters to this company</h2>
-          {r.past_letters.length ? (
-            <ul className="space-y-1.5 text-[13px]">
-              {r.past_letters.map((L) => (
-                <li key={L.date + L.comments} className="flex gap-3">
-                  <span className="w-24 shrink-0 font-mono text-[12px] text-muted">{L.date}</span>
-                  <span>{L.comments} comment{L.comments === 1 ? "" : "s"}
-                    {L.topics.length ? `: ${L.topics.join(", ")}` : ""}</span>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="text-[13px] text-muted">None in our letter corpus (2021 onward).</p>}
-        </div>}
-        <div className="rounded-xl border border-line bg-panel p-4">
-          <h2 className="mb-2 text-sm font-semibold">Less likely topics</h2>
-          <ul className="space-y-1 text-[13px]">
+      <div className="mt-6 grid gap-x-10 gap-y-6 md:grid-cols-2">
+        {!draft && (
+          <section>
+            <h3 className="caps border-b border-rule pb-1.5">Past SEC letters to this company</h3>
+            {r.past_letters.length ? (
+              <ul className="text-[14px]">
+                {r.past_letters.map((L) => (
+                  <li key={L.date + L.comments} className="flex gap-3 border-b border-line py-1.5">
+                    <span className="num w-24 shrink-0 text-muted">{L.date}</span>
+                    <span>{L.comments} comment{L.comments === 1 ? "" : "s"}{L.topics.length ? `: ${L.topics.join(", ")}` : ""}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="pt-2 text-[14px] text-muted">None in the letter corpus (2021 onward).</p>}
+          </section>
+        )}
+        <section>
+          <h3 className="caps border-b border-rule pb-1.5">Less likely topics</h3>
+          <ul className="text-[14px]">
             {r.others.slice(0, 8).map((o) => (
-              <li key={o.topic} className="flex items-center gap-2">
-                <span className="flex-1 truncate">{o.label}</span>
-                <span className="h-1.5 w-20 overflow-hidden rounded-full bg-chip">
-                  <span className="block h-1.5 bg-muted/60" style={{ width: `${o.score * 100}%` }} />
-                </span>
+              <li key={o.topic} className="flex items-center gap-3 border-b border-line py-1.5">
+                <span className="flex-1">{o.label}</span>
+                <span className="h-[3px] w-20 bg-chip" aria-hidden><span className="block h-[3px] bg-muted" style={{ width: `${o.score * 100}%` }} /></span>
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       </div>
-    </section>
+      <p className="mt-5 text-[12.5px] text-muted">
+        Read: {sections.join(", ")} · {r.words.toLocaleString()} words · model {r.model} · {r.cached ? "from cache, " : ""}{r.secs}s.
+        Statistical prediction from public SEC letters, not legal advice.
+      </p>
+    </article>
   );
 }
 
-function Loading({ mode }: { mode: string }) {
+function Working({ mode }: { mode: "ticker" | "draft" }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setStep((s) => Math.min(s + 1, STAGES[mode].length - 1)), mode === "ticker" ? 1800 : 500);
+    return () => clearInterval(id);
+  }, [mode]);
   return (
-    <div className="space-y-3" aria-live="polite">
-      <p className="text-sm text-muted">
-        {mode === "ticker" ? "Fetching the latest report from SEC EDGAR and reading it…" : "Reading your draft…"}
-      </p>
-      {[0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-xl bg-chip" />)}
+    <div aria-live="polite" className="border-t border-rule pt-4">
+      <ol className="space-y-2 text-[15px]">
+        {STAGES[mode].map((s, i) => (
+          <li key={s} className={`flex items-center gap-3 transition-opacity duration-300 ${i > step ? "opacity-35" : ""}`}>
+            <span className={`h-2 w-2 shrink-0 ${i < step ? "bg-accent" : i === step ? "animate-pulse bg-accent" : "bg-chip"}`} />
+            {s}{i === step ? "…" : ""}
+          </li>
+        ))}
+      </ol>
+      <div className="mt-6 space-y-3" aria-hidden>
+        {[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse bg-chip/70" />)}
+      </div>
     </div>
   );
 }
 
-function Intro({ status }: { status: LoopStatus | null }) {
-  const h = status?.holdout;
-  const best = h ? Math.max(...Object.values(h.baselines)) : null;
+function Empty() {
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {[
-        ["1", "Reads the report", "Business, risk factors, MD&A and the notes of a 10-K, 10-Q or 20-F."],
-        ["2", "Compares to SEC history", "What staff asked this company, its industry and the market before the filing date."],
-        ["3", "Flags likely comments", "Top topics, and expected disclosures that appear to be missing."],
-      ].map(([n, t, d]) => (
-        <div key={n} className="rounded-xl border border-line bg-panel p-4">
-          <div className="text-[12px] font-semibold text-accent">Step {n}</div>
-          <div className="font-semibold">{t}</div>
-          <p className="mt-1 text-[13px] text-muted">{d}</p>
-        </div>
-      ))}
-      {h?.f1 != null && best != null && (
-        <div className="rounded-xl border border-line bg-panel p-4 sm:col-span-3">
-          <p className="text-[13.5px]">
-            Tested on <strong>{h.n} real filings from 2025-26</strong> that the model never saw: F1@5 of{" "}
-            <strong>{h.f1.toFixed(3)}</strong> vs. {best.toFixed(3)} for the best simple baseline.{" "}
-            <Link href="/loop" className="text-accent">See how it improves itself →</Link>
-          </p>
-        </div>
-      )}
+    <div className="border-t border-rule pt-4">
+      <h2 className="head text-[1.6rem] font-bold">How to read a ruling</h2>
+      <dl className="mt-3 grid gap-x-8 gap-y-4 text-[15px] leading-relaxed sm:grid-cols-2">
+        <div><dt className="font-semibold">Ranked topics</dt><dd className="text-muted">The 5 of 23 comment topics staff are most likely to raise, with High, Medium or Lower likelihood.</dd></div>
+        <div><dt className="font-semibold">Filing vs. history</dt><dd className="text-muted">How much of each score came from the report&apos;s own words, and how much from what the SEC asked before.</dd></div>
+        <div><dt className="font-semibold"><span className="stamp mr-2">Not found</span>marks</dt><dd className="text-muted">Disclosures staff usually expect with that topic that could not be found in the text.</dd></div>
+        <div><dt className="font-semibold">Past letters</dt><dd className="text-muted">The company&apos;s recent SEC comment letters and what they were about.</dd></div>
+      </dl>
+      <p className="mt-6 text-[14px] text-muted">
+        How accurate is it? <Link href="/loop/" className="underline hover:text-ink">See the public record</Link>.
+      </p>
     </div>
   );
 }
@@ -194,25 +176,23 @@ export default function ExaminerPage() {
   const [res, setRes] = useState<ExamResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [status, setStatus] = useState<LoopStatus | null>(null);
   const [quota, setQuota] = useState<Quota | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
   const refreshQuota = () => api.quota().then(setQuota).catch(() => {});
-
-  useEffect(() => {
-    api.loopStatus().then(setStatus).catch(() => {});
-    refreshQuota();
-  }, []);
   const outOfQuota = quota?.limited === true && quota.remaining === 0;
 
   async function run(p: () => Promise<ExamResult>) {
     setBusy(true);
     setError("");
     setRes(null);
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     try {
       setRes(await p());
     } catch (e) {
       const m = (e as Error).message;
-      setError(m === "Failed to fetch" ? "Cannot reach the Examiner API. Is the backend running?" : m);
+      setError(m === "Failed to fetch" ? "Cannot reach the Examiner. Check your connection and try again." : m);
     } finally {
       setBusy(false);
       refreshQuota();
@@ -222,84 +202,108 @@ export default function ExaminerPage() {
   const examineTicker = (t: string) => {
     const clean = t.trim().toUpperCase();
     if (!clean) return;
+    setMode("ticker");
     setTicker(clean);
     run(() => api.examineTicker(clean));
   };
 
-  return (
-    <div className="space-y-6">
-      <section>
-        <h1 className="text-2xl font-semibold tracking-tight">What will the SEC ask about?</h1>
-        <p className="mt-1 max-w-2xl text-[14.5px] text-muted">
-          Examine a public company&apos;s latest report, or a draft before you file it. Predictions are
-          trained and graded on real SEC comment letters.
-        </p>
-      </section>
+  useEffect(() => {
+    refreshQuota();
+    // arriving from the landing page with ?ticker=XYZ examines it straight away
+    const t = new URLSearchParams(window.location.search).get("ticker");
+    if (t) examineTicker(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-      <section className="rounded-xl border border-line bg-panel p-4">
-        {quota?.limited && (
-          <div className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-[13px] ${outOfQuota ? "bg-warn/10 text-warn" : "bg-chip text-muted"}`}>
-            <span>
-              {outOfQuota
-                ? "You have used today's free examinations."
-                : `${quota.remaining} of ${quota.limit} free examinations left today.`}{" "}
-              Resets at {quota.resets}.
-            </span>
-            <a className="font-medium text-accent" href={REPO} target="_blank" rel="noreferrer">Run it locally for unlimited use →</a>
-          </div>
-        )}
-        <div className="mb-3 inline-flex rounded-lg bg-chip p-1 text-[13px]" role="tablist">
+  return (
+    <div className="grid gap-10 pt-8 lg:grid-cols-[22rem_1fr] lg:gap-14">
+      <aside className="lg:sticky lg:top-6 lg:self-start">
+        <h1 className="head text-[2.5rem] font-black leading-[0.95] text-balance">Examine a filing</h1>
+        <p className="mt-3 text-[15px] leading-relaxed text-muted">
+          A public company&apos;s latest 10-K, 10-Q or 20-F, or your own draft before you file it.
+        </p>
+
+        <div className="mt-6 grid grid-cols-2 border border-rule" role="tablist" aria-label="What to examine">
           {(["ticker", "draft"] as const).map((m) => (
-            <button key={m} role="tab" aria-selected={mode === m} onClick={() => { if (m !== mode) { setMode(m); setError(""); setRes(null); } }}
-              className={`rounded-md px-3 py-1.5 ${mode === m ? "bg-panel font-medium text-ink shadow-sm" : "text-muted hover:text-ink"}`}>
+            <button key={m} role="tab" aria-selected={mode === m}
+              onClick={() => { if (m !== mode) { setMode(m); setError(""); setRes(null); } }}
+              className={`caps py-2.5 text-[0.75rem] transition-colors ${mode === m ? "bg-ink text-bg" : "text-muted hover:text-ink"}`}>
               {m === "ticker" ? "Company ticker" : "Paste a draft"}
             </button>
           ))}
         </div>
 
         {mode === "ticker" ? (
-          <>
+          <div className="mt-4">
             <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); examineTicker(ticker); }}>
-              <input className="field flex-1 sm:max-w-xs" aria-label="Ticker" placeholder="Ticker, e.g. TSLA"
-                value={ticker} autoComplete="off" onChange={(e) => setTicker(e.target.value.toUpperCase())} />
-              <button className="btn" disabled={busy || outOfQuota || !ticker.trim()}>{busy ? "Examining…" : "Examine"}</button>
+              <label htmlFor="ticker" className="sr-only">Ticker</label>
+              <input id="ticker" className="field num flex-1 text-lg uppercase" placeholder="e.g. TSLA" value={ticker}
+                autoComplete="off" onChange={(e) => setTicker(e.target.value.toUpperCase())} />
+              <button className="btn" disabled={busy || outOfQuota || !ticker.trim()}>{busy ? "Working" : "Examine"}</button>
             </form>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12.5px]">
-              <span className="text-muted">Try:</span>
+            <div className="mt-3 flex flex-wrap gap-1.5 text-[13px]">
               {EXAMPLES.map((t) => (
                 <button key={t} disabled={busy || outOfQuota} onClick={() => examineTicker(t)}
-                  className="rounded-full border border-line px-2.5 py-0.5 hover:border-accent hover:text-accent disabled:opacity-50">
-                  {t}
-                </button>
+                  className="num border border-line px-2 py-0.5 hover:border-accent hover:text-accent disabled:opacity-40">{t}</button>
               ))}
             </div>
-          </>
+          </div>
         ) : (
-          <form onSubmit={(e) => { e.preventDefault(); if (draft.trim()) run(() => api.examineDraft({ text: draft, sic })); }}>
-            <textarea className="field h-44 w-full text-[13.5px]" aria-label="Draft filing text"
-              placeholder="Paste MD&A, notes to the financial statements, or a whole draft 10-K…"
+          <form className="mt-4" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) run(() => api.examineDraft({ text: draft, sic })); }}>
+            <label htmlFor="draft" className="sr-only">Draft filing text</label>
+            <textarea id="draft" className="field h-56 w-full text-[14px] leading-relaxed"
+              placeholder="Paste MD&A, notes to the financial statements, or a whole draft 10-K"
               value={draft} onChange={(e) => setDraft(e.target.value)} />
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input className="field w-44" aria-label="Industry SIC code (optional)" placeholder="SIC code (optional)"
-                inputMode="numeric" value={sic} onChange={(e) => setSic(e.target.value.replace(/\D/g, "").slice(0, 4))} />
-              <button className="btn" disabled={busy || outOfQuota || !draft.trim()}>{busy ? "Examining…" : "Examine draft"}</button>
-              <button type="button" className="text-[13px] text-accent" onClick={() => setDraft(SAMPLE_DRAFT)}>
-                Use a sample
-              </button>
+            <div className="mt-2 flex items-center justify-between text-[13px]">
+              <button type="button" className="underline hover:text-accent" onClick={() => setDraft(SAMPLE_DRAFT)}>Use a sample</button>
+              <span className="num text-muted">{draft.trim() ? draft.trim().split(/\s+/).length.toLocaleString() : 0} words</span>
             </div>
-            <p className="mt-2 text-[12px] text-muted">
-              🔒 Read in memory only. Drafts are never stored, logged or used for training.
+            <div className="mt-3 flex gap-2">
+              <label htmlFor="sic" className="sr-only">Industry SIC code, optional</label>
+              <input id="sic" className="field num w-36" placeholder="SIC (optional)" inputMode="numeric" value={sic}
+                onChange={(e) => setSic(e.target.value.replace(/\D/g, "").slice(0, 4))} />
+              <button className="btn flex-1" disabled={busy || outOfQuota || !draft.trim()}>{busy ? "Working" : "Examine draft"}</button>
+            </div>
+            <p className="mt-3 flex items-start gap-2 text-[13px] text-muted">
+              <Lock className="mt-0.5 shrink-0" /> Read in memory only. Never stored, logged or used for training.
             </p>
           </form>
         )}
-      </section>
 
-      {error && (
-        <div role="alert" className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-3 text-[14px] text-bad">{error}</div>
-      )}
-      {busy && <Loading mode={mode} />}
-      {res && <Result r={res} />}
-      {!res && !busy && !error && <Intro status={status} />}
+        {quota?.limited && (
+          <div className={`mt-6 border-t border-rule pt-3 text-[14px] ${outOfQuota ? "text-warn" : "text-muted"}`}>
+            <div className="flex items-baseline justify-between">
+              <span className="caps">Free examinations today</span>
+              <span className="num text-[1.1rem] font-bold text-ink">{quota.remaining} / {quota.limit}</span>
+            </div>
+            <div className="mt-2 flex gap-1" aria-hidden>
+              {Array.from({ length: quota.limit }, (_, i) => (
+                <span key={i} className={`h-1.5 flex-1 ${i < (quota.remaining ?? 0) ? "bg-accent" : "bg-chip"}`} />
+              ))}
+            </div>
+            <p className="mt-2">
+              {outOfQuota ? "You have used today's free examinations. " : ""}Resets at {quota.resets}.{" "}
+              <a className="underline hover:text-ink" href={REPO} target="_blank" rel="noreferrer">Run it locally</a> for unlimited use.
+            </p>
+          </div>
+        )}
+      </aside>
+
+      <div ref={resultRef} className="min-w-0 scroll-mt-4">
+        {error && (
+          <div role="alert" className="mb-6 border-2 border-stamp px-4 py-3 text-[15px]">
+            <span className="caps mr-2 text-stamp">Could not examine</span>{error}
+            {outOfQuota && (
+              <a href={REPO} className="mt-2 flex items-center gap-1.5 font-semibold underline" target="_blank" rel="noreferrer">
+                Run it on your machine <ArrowRight />
+              </a>
+            )}
+          </div>
+        )}
+        {busy && <Working mode={mode} />}
+        {res && !busy && <Ruling r={res} />}
+        {!res && !busy && !error && <Empty />}
+      </div>
     </div>
   );
 }
