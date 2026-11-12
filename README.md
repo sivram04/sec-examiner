@@ -1,142 +1,229 @@
-# AI Research Desk
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/wordmark-dark.svg"><img src="docs/img/wordmark-light.svg" alt="SEC Examiner" width="300" height="56"></picture></p>
 
-A team of AI agents that researches public companies the way an analyst desk does. It reads SEC filings and XBRL financials, tracks how risk disclosures change over time, debates bull and bear cases, and writes a cited note in which every number is computed in code and every claim is checked against its source.
+<p align="center">Predicts what the SEC will ask about your 10-K, before the SEC&nbsp;does.</p>
 
-Full spec and phases: [PLAN.md](PLAN.md). Free resources only. Research output, not investment advice.
+<p align="center">
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Next.js 15" src="https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-REST-009688?logo=fastapi&logoColor=white">
+  <img alt="MCP server" src="https://img.shields.io/badge/MCP-5%20tools-6E56CF">
+  <img alt="106 tests passing" src="https://img.shields.io/badge/tests-106%20passing-2f7d4f">
+  <img alt="Free to run" src="https://img.shields.io/badge/cost-%240%20to%20run-1f5f8b">
+</p>
 
-## How it works
+<p align="center">
+<strong>Every year the SEC sends thousands of comment&nbsp;letters.</strong><br>
+Each one costs a company weeks of lawyers, auditors and a public record of what it got&nbsp;wrong.
+</p>
 
-```
-EDGAR submissions / current-filings feed
-      │  desk watch (poll)  ·  desk backfill
-      ▼
-raw-docs topic (Redpanda, or in-memory) ──► desk parse: section-aware parser + tables
-      │                                       └─► data/chunks/<accession>.jsonl (corpus of record)
-      ▼
-parsed topic ──► hybrid index: BM25 (Lucene IDF) + Qdrant dense (bge-small) ──► RRF ──► bge-reranker
-                 every query carries as_of: nothing filed later is ever returned
-XBRL company facts ──► fact store (point-in-time series)
-10-K Item 1A ──► risk factors ──► diff ──► temporal graph (valid_from / valid_to)
-      ▼
-LangGraph desk: planner → [human approves plan] → fundamentals · risk · transcript
-               → quant sandbox → bull · bear → critic → [human reviews flags] → writer
-      ▼
-FastAPI + web UI  ·  MCP tool server  ·  eval gate in CI
-```
+<p align="center">
+<strong>5,107&nbsp;real SEC letters. 2,597&nbsp;reviewed filings. Tested on a year it never&nbsp;saw.</strong><br>
+F1@5 of <strong>0.352</strong> on 380 filings from 2025–26, vs. 0.318 for the best simple&nbsp;baseline.
+</p>
 
-Design rules that keep reports honest:
-- **No LLM arithmetic.** Growth and margins come from fixed code run in the sandbox on XBRL inputs. The critic rejects any claim containing a number that isn't in a cited passage or a cited quant result.
-- **Citations are rendered by code**, not written by the model, so a reference can't be invented.
-- **Point in time.** Retrieval, XBRL series and the risk graph all take an `as_of` date. The backtest's leakage tests check that tampering with data before the filing date changes nothing.
+<p align="center">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/examiner-dark.png"><img src="docs/img/examiner-light.png" alt="The Examiner reading Alibaba's 20-F: China, Russia and sanctions ranked first with High likelihood, 86% of the signal from the filing's own text." width="860"></picture>
+</p>
 
-## Status
+<p align="center"><sub>Alibaba's latest 20-F, examined in 8&nbsp;seconds. Every prediction says how much came from the filing and how much from SEC&nbsp;history.</sub></p>
 
-| Phase | State |
-|---|---|
-| 0 Setup | Done: Docker stack, config, CI (lint, tests, eval gate) |
-| 1 Ingestion | Done: EDGAR client (with paging for busy filers), section parser, table extraction, chunker, Redpanda pipeline, new-filing watcher, XBRL fact store |
-| 2 Retrieval | Done: BM25 + dense + RRF + cross-encoder rerank with `as_of`/ticker/section filters; golden set and method comparison |
-| 3 Temporal graph | Mostly done: risk-factor splitting and diff; grounded LLM extraction of segments, executives, products, suppliers, customers and competitors from 10-K Item 1 (every entity backed by a verbatim quote, checked in code); validity spans; `graph-query` answers "named in 2023 but not 2025"; the desk uses entity changes as evidence. Not done: a 50-question temporal test set |
-| 4 Agent desk | Done: runs end to end on Gemini (AI Studio free tier) and on a scripted LLM in tests |
-| 5 Evaluation | Mostly done: offline CI gate proven to fail on a deliberate regression; LLM eval measured citation precision 1.000 on 10 questions (target 0.95) |
-| 6 Backtest | Code and leakage tests done; see results below |
-| 7 Web app | Partial: FastAPI backend plus a Next.js front end (`frontend/`: research with plan approval, search, what changed, company pages, report library). Public deploy (Vercel + Oracle VM) and demo video not done |
+<p align="center"><a href="#your-turn">Try it on one company&nbsp;↓</a> · <a href="#how-it-improves-itself">See how it improves itself&nbsp;→</a> · <a href="#use-it-from-your-ai-assistant-mcp">Use it from Claude or Cursor&nbsp;→</a></p>
 
-### Known gaps
-- **Cross-reference filers** (JPM, C, WFC, MS, and also INTC, MCD, GE, DUK) don't use standard Item headings in their 10-K. Their content is kept, but it lands under "other" rather than MD&A or Risk Factors. A generic "RISK FACTORS" heading fallback was tried and rejected: these filers use ALL-CAPS headings for both risk categories and other sections, so no single rule finds where the section ends.
-- **Entity extraction quality**: quotes are always verbatim, but types are sometimes wrong (Arm and SoftBank, a cancelled acquisition, tagged as suppliers; markets tagged as segments). Name variants ("Broadcom" vs "Broadcom, Inc.") also aren't merged yet.
-- **Transcripts**: earnings-call transcripts aren't freely licensed, so the transcript analyst reads the earnings release each company files with the SEC (8-K Item 2.02, Exhibit 99.1). It scores tone with a fixed lexicon in code.
-- **Risk diff is headline-level.** When a filer folds several factors into one umbrella factor (MSFT, FY2025), the old headlines show as removed even though their content moved.
-- Facts, graph and memory use SQLite locally; the schemas are Postgres/Neo4j-ready (`to_cypher`), but those loaders aren't written.
-- The golden retrieval set has 26 questions, against a plan target of ~200.
+<br>
 
-## Quickstart
+## Your turn
+
+Pick a company you know. If the Examiner's top topic matches the last letter the SEC sent them, you will see why this exists.
 
 ```bash
-python -m venv .venv && . .venv/Scripts/activate
-pip install -e ".[dev]"
-cp .env.example .env            # set SEC_USER_AGENT to "<name> <your email>"
-pytest -q && python evals/gate.py
-
-desk ingest --tickers AAPL,MSFT,NVDA --since 2024-01-01     # in-memory bus
-desk facts --tickers AAPL,MSFT,NVDA
-desk risk-graph --tickers AAPL,MSFT,NVDA --since 2022-01-01
-desk search "export restrictions to China" --ticker NVDA --as-of 2025-06-30
-desk risks NVDA
-desk what-changed MSFT 2024-12-31 2025-12-31
-desk backtest --tickers sp100 --since 2018-01-01
-uvicorn research_desk.api:app --port 8000                    # web UI at http://localhost:8000
-python -m research_desk.agents.mcp_server                    # MCP tools over stdio
+pip install -e .                      # Python 3.11+
+uvicorn research_desk.api:app --port 8011
+npm --prefix frontend install && npm --prefix frontend run dev -- -p 3011
 ```
 
-With Redpanda: `docker compose up -d redpanda`, then `desk backfill --bus kafka` and `desk parse --bus kafka`.
-To run the agents, set `LLM_API_KEY` (any OpenAI-compatible free tier, or the Project 1 gateway via `LLM_BASE_URL`): `desk research AAPL "Is gross margin at risk from tariffs?"`.
+Open <http://localhost:3011>, type a ticker (or click **TSLA**, **BABA**, **COIN**) and press **Examine**.
 
-## Metrics
+<p align="center"><sub>Local. Free. No account, no database, no API key needed to examine.</sub></p>
 
-Only numbers produced by scripts in this repo appear here. Each one names the command that produced it.
+## What the Examiner does for you
 
-**Corpus** (`desk stats`): 45 documents (11 10-K, 34 10-Q), 13,246 chunks, 5 tickers, filed 2024-01 to 2026-08. XBRL fact store: 139,335 facts for AAPL, MSFT, NVDA, JPM (`desk facts`).
+Give it a report. It tells you where the SEC is likely to push.
 
-**Eval gate** (`python evals/gate.py`, offline fixture of 1,876 chunks; easier than the full corpus because 376 of them are relevant):
+- **What will they ask about?** The 5 most likely comment topics (out of 23), each rated High, Medium or Lower.
+- **Why?** Each topic shows how much came from your filing's own words and how much from what the SEC asked your company, your industry and the market before.
+- **What is missing?** For 17 topics it checks the disclosures staff usually expect, e.g. goodwill without reporting-unit headroom, non-GAAP without the comparable GAAP measure.
+- **Not filed yet?** Paste a draft. It is read in memory and forgotten.
+- **Asked before?** It lists the company's recent SEC letters and what they were about.
+- **How good is it, really?** The live dashboard shows the exact score on years it was never tuned on, next to the baselines it has to beat.
 
-| Check | Score | Floor |
-|---|---|---|
-| BM25 recall@10 / MRR | 0.962 / 0.814 | 0.94 / 0.79 |
-| Hybrid (BM25 + hash vectors) recall@10 / MRR / nDCG@10 | 0.962 / 0.846 / 0.851 | 0.94 / 0.82 / 0.83 |
-| Critic: true claims accepted | 1.000 (30 real sentences) | 0.95 |
-| Critic: false claims rejected | 1.000 (30 perturbed numbers + 3 citation failures) | 1.00 |
+## What the Examiner will not do
 
-With number-checking disabled, the false-claim rejection rate fell to 0.061 and the gate exited 1.
+- **Keep your draft.** Drafts are processed in memory. Nothing is written to disk, logged or used for training (a test checks this).
+- **Learn from users.** It learns only from official SEC letters, so no user can poison it.
+- **Ship a worse version.** A new version goes live only if a hash-sealed judge passes it and it beats the current champion. If the judge's files change, the dashboard shows it.
+- **Grade itself on the past it trained on.** Every score is point-in-time: training uses only letters published before the graded filings.
+- **Give legal advice.** It ranks likely topics from public data. Your counsel and auditors decide.
 
-**Retrieval method comparison on the full corpus** (`desk eval-retrieval`, 13,246 chunks, 26 golden questions, bge-small embeddings, bge-reranker-base; [evals/results/retrieval.md](evals/results/retrieval.md)):
+## Features
 
-| Method | Recall@10 (hit rate) | MRR | nDCG@10 |
-|---|---|---|---|
-| BM25 | 0.962 | 0.634 | 0.714 |
-| Dense | 0.808 | 0.573 | 0.628 |
-| Hybrid (RRF) | 0.885 | 0.658 | 0.711 |
-| Hybrid + rerank | 0.885 | 0.756 | 0.785 |
+| Feature | Description |
+| --- | --- |
+| **Examine by ticker** | Fetches the company's latest 10-K, 10-Q or 20-F from SEC EDGAR, reads business, risk factors, MD&A and the notes, and ranks the 23 comment topics. 6–10 s first time, under 1 s after. |
+| **Examine a draft** | Paste unfiled text with an optional industry (SIC) code. About 0.2 s. Warns when the text is too short to read reliably. |
+| **Explanations** | Likelihood badge, the filing-vs-history split behind each score, and plain-English missing disclosures. |
+| **Self-improvement loop** | Diagnoses weak topics, proposes a change (Gemini or fixed rules), retrains, and lets the judge decide. Rejected versions stay in the audit log. |
+| **Sealed judge** | SHA-256 manifest over the grading code, 4 baselines, point-in-time history, minimum-gain and latency/cost gates. |
+| **MCP server** | `examine_company`, `examine_draft`, `explain_topic`, `list_topics`, `examiner_status` for Claude, Cursor, VS Code or any MCP client. |
+| **REST API** | `GET /api/examiner/ticker/{ticker}`, `POST /api/examiner/draft`, `GET /api/examiner/status`. |
 
-The reranker gives the best ordering (MRR +0.12 over BM25), but BM25 finds the most answers. Caveat: relevance is judged by exact answer phrases, which favours lexical search, and 26 questions is a small sample. Hybrid fusion also loses recall here, because dense results push lexical hits out of the top 10. Worth trying next: a larger fusion pool, or weighting BM25 more for numeric and entity questions. Building the embedded index took 46 minutes on CPU.
+<details>
+<summary><b>Everything else it does</b></summary>
 
-**Agent desk, end to end** (`python evals/llm_evals.py --limit 10`; model `gemini-3.1-flash-lite`, which also acts as the judge; [evals/results/llm_evals.json](evals/results/llm_evals.json)):
+| Feature | Description |
+| --- | --- |
+| **Corpus builder** | Pages EDGAR full-text search month by month, splits each letter into numbered comments, links it to the filing it reviewed, resumes after interruption. |
+| **Topic taxonomy** | 23 deterministic topics with a follow-up-comment rule, so the gold labels cannot drift between runs. |
+| **Version registry** | Every model version with its recipe, scores and parent; `desk examiner-rollback` restores the previous champion. |
+| **Later-year holdout** | Train on 2021–23, choose on 2024, report on 2025–26. |
+| **Predecessor entities** | Letters sent to a company's former legal entity count as its history (e.g. ExxonMobil). |
+| **Dark mode and mobile** | Both pages work at phone width and follow the system theme. |
 
-| Run | Citation precision | Critic rejection rate | Mean time per report | LLM calls / tokens |
-|---|---|---|---|---|
-| v1 | 0.627 (42/67 accepted claims supported) | 5.6% | 102 s | 98 / 139K in, 7K out |
-| v2 | 0.919 (68/74) | 1.3% | 50 s | 104 / 140K in, 6K out |
-| v3 | **1.000** (76/76) | 3.7% | 82 s* | 107 / 149K in, 6K out |
+</details>
 
-\*v3 ran alongside a corpus ingestion job on the same CPU.
+## How It Works
 
-v2 → v3, again from reading the misses. Evidence labels now carry the report period, because a passage rarely states which quarter it covers: models were guessing, and the judge couldn't check dates. Claim dates must match that period, so wrong dates are still rejected. Claims must also keep every cause the source gives. The judge prompt was not changed between runs.
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/how-it-works-dark.svg"><img src="docs/img/how-it-works-light.svg" alt="Examine: a ticker or draft goes through the champion model (filing text plus point-in-time SEC history) and 17 gap checks, producing the top 5 topics with reasons and missing disclosures, served by the web app, REST API and MCP tools. Improve: an offline loop diagnoses weak topics, proposes a recipe change, and a sealed judge grades it on real SEC letters; it ships only if it passes and beats the champion." width="860"></picture></p>
 
-Three changes between v1 and v2, each found by reading v1's failures:
-- claims may only state what the cited source says, with no added judgement;
-- off-topic facts are dropped;
-- the critic now treats "€500 million" and "500,000,000" as the same amount.
+**The model.** For each topic, `score = w · P(topic | filing text) + (1 − w) · prior(topic | company, industry, recent market)`. The text side is TF-IDF with one logistic regression per topic; the prior side counts what the SEC asked before the filing date. `w` and every other setting live in a validated *recipe*, which is what the loop is allowed to change.
 
-v3 clears the plan's 0.95 target. That's on 10 questions, with the same small model as judge, so treat it as indicative rather than proven; the next step is more questions and a stronger, independent judge. Cost is $0 on the free tier. A sample note is in [evals/results/sample_report_nvda.md](evals/results/sample_report_nvda.md).
+**The grade.** F1@5: of the real first-round comment topics in the SEC's letter, how many were in the Examiner's top 5, balanced against how many of its 5 were wrong.
 
-**Backtest** (`desk backtest --tickers sp100 --since 2018-01-01`; [evals/results/backtest.json](evals/results/backtest.json)). Signal: risk-factor deterioration between consecutive 10-Ks. Return: excess over SPY from the first close after the filing date.
+## How it improves itself
 
-| Window | Filing pairs | Tickers | Spearman(signal, excess) | Noise band (±2/√n) | High − low tercile |
-|---|---|---|---|---|---|
-| 63 trading days | 512 | 78 | 0.033 | 0.088 | +1.2 pp |
-| 252 trading days | 441 | 77 | 0.018 | 0.095 | +3.9 pp |
+<p align="center">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/loop-dark.png"><img src="docs/img/loop-light.png" alt="Self-improvement dashboard: champion v1, judge sealed, selection F1 0.357 and holdout 0.352 against four baselines, and every attempted version with its change, proposer and the judge's decision." width="860"></picture>
+</p>
 
-**Result: no usable signal.** Both correlations sit well inside the noise band. The tercile spread even points the "wrong" way: more new risk language goes with slightly *higher* later returns. This is reported as a negative result, not tuned until something looked significant.
+No one writes code for an update. Each run of `desk examiner-improve`:
 
-Coverage gaps in this run: 24 tickers produced no filing pairs because their Item 1A couldn't be split into individual factors: AMGN, AMT, AMZN, BMY, C, CSCO, DUK, EMR, GE, INTC, INTU, LLY, MCD, MET, MMM, MS, NOW, PFE, UNP, USB, VZ, WFC, WMT and XOM. BK is missing from SEC's ticker map. Fixing the risk-factor splitter for those filers would widen the sample.
+1. **Diagnoses** the champion: topics with recall under 40%, validation that overstates real results, unused signals, slow training.
+2. **Proposes** one recipe change. Gemini proposes from the diagnosis; fixed rules take over if it is offline or out of range. Nothing repeats.
+3. **Retrains** on letters published before 2024 and grades on 2024 (selection) and 2025–26 (holdout).
+4. **Ships** only if the judge passes it and it beats the champion by at least 0.005 on selection. The holdout is reported, never used to choose.
 
-## SEC Examiner (product)
+The honest record so far: 5 versions tried, 1 shipped. Bigger vocabularies, meaning embeddings (local Ollama) and disclosure-gap features were each tried and rejected because they did not beat v1. See [`docs/judge.md`](docs/judge.md) for every number.
 
-Predicts which topics SEC staff will raise in a 10-K, 10-Q or 20-F, graded against real comment letters.
+| | Selection (2024, 640 filings) | Holdout (2025–26, 380 filings) |
+| --- | --- | --- |
+| **Examiner v1** | **0.357** | **0.352** |
+| Company's own history | 0.312 | 0.289 |
+| Industry rate | 0.311 | 0.285 |
+| Recent market rate | 0.285 | 0.318 |
+| Market base rate | 0.293 | 0.296 |
 
-- **Examine** (`/examiner`): enter a ticker (latest periodic report from EDGAR) or paste a draft. Returns the top 5 likely comment topics, how much of each score came from the filing vs. past SEC letters, and expected disclosures that could not be found.
-- **Self-improvement** (`/loop`): champion version, judge seal status, selection (2024) and later-year holdout (2025–26) F1 vs. baselines, every attempted version with its change and the judge's decision, per-topic recall.
-- API: `GET /api/examiner/ticker/{ticker}`, `POST /api/examiner/draft`, `GET /api/examiner/status`.
-- Stateless: submitted drafts are processed in memory, never stored, logged or used for training. The model learns only from official SEC letters.
+## Use it from your AI assistant (MCP)
 
-Champion v1: F1@5 0.357 on 640 filings from 2024 and 0.352 on 380 filings from 2025–26, vs. best baselines 0.312 and 0.318. See `docs/judge.md`.
+The Examiner ships an MCP server, so Claude, Cursor or any MCP client can call it as tools.
+
+```json
+{
+  "mcpServers": {
+    "sec-examiner": {
+      "command": "C:/path/to/02-ai-research-desk/.venv/Scripts/sec-examiner-mcp.exe"
+    }
+  }
+}
+```
+
+Then ask: *"What is the SEC likely to ask Alibaba about in its next review?"* or *"Check this MD&A draft for gaps before we file."*
+
+| Tool | What it returns |
+| --- | --- |
+| `examine_company(ticker)` | Top 5 topics with likelihood, filing-vs-history share, missing disclosures, past SEC letters |
+| `examine_draft(text, sic?, form?)` | The same for unfiled text; never stored |
+| `explain_topic(topic)` | What a topic covers and which disclosures staff expect |
+| `list_topics()` | All 23 topics with plain-English names |
+| `examiner_status()` | Champion, judge seal, selection and holdout scores, recent attempts |
+
+## Quick Start
+
+```bash
+git clone <this repo> && cd 02-ai-research-desk
+python -m venv .venv && . .venv/Scripts/activate      # macOS/Linux: . .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env              # set SEC_USER_AGENT to "<name> <email>" (SEC asks for one)
+pytest -q                         # 106 tests
+```
+
+<details>
+<summary><b>Rebuild the data and the model from scratch</b></summary>
+
+```bash
+desk examiner-build --start 2022-01-01 --end 2026-10-31   # SEC letters (resumable, ~2 h)
+desk examiner-fetch                                        # the filings they reviewed
+desk judge-baselines                                       # what any model must beat
+desk examiner-improve --iterations 3                       # bootstrap + self-improvement
+desk examiner-status                                       # champion, lineage, attempts
+desk examiner-rollback                                     # revert to the previous champion
+```
+
+Proposals from Gemini need `LLM_API_KEY` (Google AI Studio free tier) in `.env`; without it the loop uses its fixed rules. Optional embeddings need [Ollama](https://ollama.com) with `nomic-embed-text`.
+
+</details>
+
+## Project Structure
+
+```text
+src/research_desk/
+├── examiner/
+│   ├── letters.py       # EDGAR full-text search, letter parsing, comment splitting
+│   ├── link.py          # letter -> the 10-K/10-Q/20-F it reviewed
+│   ├── corpus.py        # append-only, resumable corpus build
+│   ├── filings.py       # fetch and cache the reviewed filings' sections
+│   ├── model.py         # Recipe, priors, the Examiner, training and tuning
+│   ├── gaps.py          # 17 expected-disclosure rules
+│   ├── embed.py         # optional local embeddings (Ollama)
+│   ├── run.py           # train + grade with the judge (selection / holdout)
+│   ├── improve.py       # diagnose -> propose -> train -> judge -> ship/reject, registry, audit log
+│   ├── service.py       # stateless product service (ticker, draft, status)
+│   └── mcp_server.py    # MCP tools
+├── judge/               # hash-sealed: topics, cases, scoring, baselines, harness, gates.json
+├── api.py               # FastAPI
+└── cli.py               # `desk` commands
+frontend/src/app/
+├── examiner/            # the Examiner page
+└── loop/                # the self-improvement dashboard
+docs/judge.md            # judge rules, corpus stats, every version's numbers
+```
+
+## Tech Stack
+
+| Layer | Tools |
+| --- | --- |
+| Model | scikit-learn (TF-IDF, logistic regression), NumPy, joblib |
+| Data | SEC EDGAR (submissions, full-text search, filing archives), httpx |
+| Self-improvement | Gemini via Google AI Studio (OpenAI-compatible), rule fallback, optional Ollama embeddings |
+| Backend | FastAPI, Pydantic |
+| Frontend | Next.js 15, React 19, Tailwind CSS 4 |
+| Integration | Model Context Protocol (Python SDK) |
+| Quality | pytest (106 tests), ruff, ESLint, TypeScript |
+
+## FAQ
+
+**Is 0.35 good?** For a top-5 ranking over 23 topics on real letters, the bar is the baselines: the best one scores 0.318 on the holdout. The Examiner beats every baseline on both windows, and its holdout score (0.352) is close to its selection score (0.357), so it is not overfitted to the year it was chosen on.
+
+**Why do MD&A, non-GAAP and segments show up so often?** They are the SEC's most common comment topics. Company-specific topics rise when the filing gives a reason: China and sanctions for Alibaba, climate for energy companies, financial instruments for banks.
+
+**Why not use an LLM to read the whole filing?** Cost and honesty. The current model runs in milliseconds on a laptop and every change is graded on 1,000+ real cases. An LLM reader is a candidate the loop can test next; it ships only if it wins.
+
+**Does any of my data leave my machine?** Ticker lookups call SEC EDGAR. Drafts never leave the process. The improvement loop sends only aggregate diagnostics (per-topic recall, recipe) to Gemini, never filing text or drafts.
+
+**What are the known limits?** Some bank 10-Qs are not fully split into sections; topics with few past letters (crypto, mining) have little to learn from; the first lookup of a ticker takes 6–10 s because the filing is downloaded live.
+
+## Disclaimer
+
+The SEC Examiner ranks likely comment topics from public SEC data. It is not legal, accounting or investment advice and is not affiliated with or endorsed by the U.S. Securities and Exchange Commission. Use it to prepare, then decide with your counsel and auditors.
+
+## About the Author
+
+Built by [@sivram04](https://github.com/sivram04) as part of an AI engineering portfolio: an enterprise-style product whose model improves itself without anyone writing code, and proves each step on real data.
