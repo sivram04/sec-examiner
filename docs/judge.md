@@ -85,3 +85,7 @@ Best baselines: selection 0.312 (company history), holdout 0.318 (recent base ra
 ### Passage embeddings (2026-11-11)
 
 v4 added local Ollama `nomic-embed-text` embeddings (24 topic passages per filing, all 2,597 filings, 0 errors) as a tunable share of the text signal (`embed_grid`). Tuning chose share 0.0 on 510 validation cases, so v4 equals v1 (selection 0.357, holdout 0.352) and was rejected. Likely causes: a few percent of each filing embedded; SEC comments often target omissions, which topic similarity does not measure. Next: per-topic "gap" features (topic discussed but expected disclosure missing).
+
+### Disclosure-gap features (2026-11-11)
+
+v5 added 17 per-topic gap rules (trigger present, expected disclosures missing; `examiner/gaps.py`) as 68 extra features. Rejected: selection 0.336 vs 0.357, holdout 0.331 vs 0.352. Holdout recall rose slightly for impairment (0.05→0.11), income taxes (0.05→0.10) and financial instruments (0.25→0.31), but fell for liquidity, controls and cybersecurity; the extra features diluted the word-count model overall. `gaps_report()` stays as an explanation aid. Three model ideas (vocabulary, embeddings, gaps) have now failed to beat v1, which marks the ceiling of this model family on ~1,457 training cases.
