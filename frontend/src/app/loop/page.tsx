@@ -12,7 +12,7 @@ const CHANGE_NAMES: Record<string, string> = {
   ngram_max: "phrase length", min_df: "min. word frequency", max_features: "vocabulary size",
   val_fraction: "validation share", prior_company: "company-history weight",
   prior_industry: "industry weight", prior_recent: "recent-trend weight", embed_grid: "meaning embeddings",
-  gaps: "disclosure-gap checks", c_grid: "regularisation", weight_grid: "text vs. history weights",
+  gaps: "disclosure-gap checks", plugin: "generated feature code", c_grid: "regularisation", weight_grid: "text vs. history weights",
   sections: "sections read", max_chars: "text length", class_weight: "class balancing",
   recent_days: "recent window",
 };
@@ -63,7 +63,7 @@ function Score({ title, note, w }: { title: string; note: string; w: LoopStatus[
 
 function AttemptRow({ a, champion }: { a: Attempt; champion: string | null }) {
   const promoted = a.decision === "promote";
-  const source = a.rationale.startsWith("llm:") ? "Gemini" : a.rationale.startsWith("rule:") ? "Rule" : "Bootstrap";
+  const source = a.rationale.startsWith("llm-code:") ? "Gemini (wrote code)" : a.rationale.startsWith("llm:") ? "Gemini" : a.rationale.startsWith("rule:") ? "Rule" : "Bootstrap";
   const RULE_WHY: Record<string, string> = {
     weak_topic: "Targets topics the champion often misses",
     validation_overstates: "Validation looked better than real results",
@@ -71,7 +71,7 @@ function AttemptRow({ a, champion }: { a: Attempt; champion: string | null }) {
     slow: "Makes predictions faster", slow_training: "Makes training faster",
     gate_fail: "Champion failed a judge check",
   };
-  const raw = a.rationale.replace(/^(llm|rule|bootstrap):\s*/, "");
+  const raw = a.rationale.replace(/^(llm-code|llm|rule|bootstrap):\s*/, "");
   const why = source === "Rule"
     ? RULE_WHY[raw.replace(/^address\s+/, "")] ?? raw.replaceAll("_", " ")
     : source === "Bootstrap" ? "First version on the 2021–2026 dataset, using the best earlier recipe" : raw;

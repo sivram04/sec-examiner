@@ -89,3 +89,14 @@ v4 added local Ollama `nomic-embed-text` embeddings (24 topic passages per filin
 ### Disclosure-gap features (2026-11-11)
 
 v5 added 17 per-topic gap rules (trigger present, expected disclosures missing; `examiner/gaps.py`) as 68 extra features. Rejected: selection 0.336 vs 0.357, holdout 0.331 vs 0.352. Holdout recall rose slightly for impairment (0.05→0.11), income taxes (0.05→0.10) and financial instruments (0.25→0.31), but fell for liquidity, controls and cybersecurity; the extra features diluted the word-count model overall. `gaps_report()` stays as an explanation aid. Three model ideas (vocabulary, embeddings, gaps) have now failed to beat v1, which marks the ceiling of this model family on ~1,457 training cases.
+
+### Code-writing attempts (2026-11-12)
+
+The loop can now write code: Gemini writes a `features(text)` Python function aimed at weak topics; an AST check allows only `re`/`math` and blocks file, network, reflection and format-string escapes; the code runs in an isolated subprocess (`python -I`, empty directory, no secrets, timeout) after a determinism smoke test; its features join the model via `Recipe.plugin`; the sealed judge decides. Code is in `data/examiner/plugins/<id>/code.py`.
+
+| Version | Generated code | Selection F1 | Holdout F1 | Decision |
+|---|---|---|---|---|
+| v6 | density of 11 expected-disclosure phrases (tax, legal, impairment, cyber, governance) | 0.338 | 0.338 | reject (no gain) |
+| v7 | absence/scarcity flags for 14 mandatory phrases | 0.327 | 0.307 | reject (fails the judge gate) |
+
+Both passed the safety check and sandbox, and neither beat v1 (0.357), consistent with the hand-written gap features (v5): phrase-presence signals add noise to a strong word-count model. v1 stays champion.
