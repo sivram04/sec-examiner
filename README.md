@@ -129,3 +129,14 @@ v3 clears the plan's 0.95 target. That's on 10 questions, with the same small mo
 **Result: no usable signal.** Both correlations sit well inside the noise band. The tercile spread even points the "wrong" way: more new risk language goes with slightly *higher* later returns. This is reported as a negative result, not tuned until something looked significant.
 
 Coverage gaps in this run: 24 tickers produced no filing pairs because their Item 1A couldn't be split into individual factors: AMGN, AMT, AMZN, BMY, C, CSCO, DUK, EMR, GE, INTC, INTU, LLY, MCD, MET, MMM, MS, NOW, PFE, UNP, USB, VZ, WFC, WMT and XOM. BK is missing from SEC's ticker map. Fixing the risk-factor splitter for those filers would widen the sample.
+
+## SEC Examiner (product)
+
+Predicts which topics SEC staff will raise in a 10-K, 10-Q or 20-F, graded against real comment letters.
+
+- **Examine** (`/examiner`): enter a ticker (latest periodic report from EDGAR) or paste a draft. Returns the top 5 likely comment topics, how much of each score came from the filing vs. past SEC letters, and expected disclosures that could not be found.
+- **Self-improvement** (`/loop`): champion version, judge seal status, selection (2024) and later-year holdout (2025–26) F1 vs. baselines, every attempted version with its change and the judge's decision, per-topic recall.
+- API: `GET /api/examiner/ticker/{ticker}`, `POST /api/examiner/draft`, `GET /api/examiner/status`.
+- Stateless: submitted drafts are processed in memory, never stored, logged or used for training. The model learns only from official SEC letters.
+
+Champion v1: F1@5 0.357 on 640 filings from 2024 and 0.352 on 380 filings from 2025–26, vs. best baselines 0.312 and 0.318. See `docs/judge.md`.

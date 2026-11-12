@@ -18,6 +18,32 @@ export type RiskChange = {
 export type FactPoint = { end: string; value: number; filed: string; accession: string };
 export type ReportRow = { id: number; ticker: string; question: string; as_of: string; created: number };
 
+export type Prediction = {
+  topic: string; label: string; about: string; score: number;
+  from_filing: number; from_history: number; missing: string[];
+};
+export type ExamResult = {
+  model: string;
+  filing: { company: string; form: string; filed: string; period: string | null; url: string; sic: string };
+  predictions: Prediction[];
+  others: { topic: string; label: string; score: number }[];
+  past_letters: { date: string; topics: string[]; comments: number }[];
+  sections_read: string[];
+  secs: number;
+};
+export type Attempt = {
+  time: string | null; version: string; parent: string | null; changes: Record<string, unknown>;
+  rationale: string; selection_f1: number | null; holdout_f1: number | null;
+  decision: string; reason: string;
+};
+type Window = { f1: number | null; n: number | null; baselines: Record<string, number> };
+export type LoopStatus = {
+  champion: string | null; lineage: string[]; judge_sealed: boolean;
+  selection: Window; holdout: Window; trained_on: number | null; train_window: string[] | null;
+  topic_recall: { topic: string; label: string; n: number; recall: number }[];
+  attempts: Attempt[];
+};
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${API}${path}`, {
     ...init,
@@ -29,6 +55,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  examineTicker: (t: string) => call<ExamResult>(`/api/examiner/ticker/${encodeURIComponent(t)}`),
+  examineDraft: (body: { text: string; sic?: string; form?: string }) =>
+    call<ExamResult>("/api/examiner/draft", { method: "POST", body: JSON.stringify(body) }),
+  loopStatus: () => call<LoopStatus>("/api/examiner/status"),
   companies: () => call<Company[]>("/api/companies"),
   search: (p: Record<string, string>) => call<{ ms: number; hits: Hit[] }>(`/api/search?${new URLSearchParams(p)}`),
   risks: (t: string, start: string, end: string) =>

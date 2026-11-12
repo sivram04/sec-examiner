@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
+  { href: "/examiner", label: "SEC Examiner" },
+  { href: "/loop", label: "Self-improvement" },
   { href: "/", label: "Research" },
   { href: "/search", label: "Search filings" },
   { href: "/changes", label: "What changed" },
